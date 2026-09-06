@@ -96,7 +96,11 @@ fork 腾讯 BrowserSkill，把 bsk daemon 改造成**局域网网关/broker（�
 - [x] INIT.md 建立
 - [x] Rust 工具链就绪（rustup 1.98.1 stable，~/.cargo/env）
 - [x] 基线：`cargo test -p bsk -- --test-threads=1` **274 全绿**存档（分支 feature/gateway；并行首跑 1 个失败为 env 竞争 flaky，串行通过）
-- [ ] M1 开工（传输 + 认证 + 协议 + `--gateway`）
+- [x] **M1 完成（9 个 commit，全部测试绿）**：协议 1.2（token/agent_id）+ WS 可配 listen + TCP IPC（首帧 agent-token 认证）+ 互锁 + 禁 auto-update + WS extension_token + TcpClient/remote 短路 + Busy 语义/session 归属 + --share override
+- [ ] M2 Busy/一致性集成测试（协议已动完，补并发语义测试）
+- [ ] M3 扩展 UI（popup IP 配置，可降级）
+- [ ] M4 skill 网关形态
+- [ ] M5 跨机 soak + 文档 + Windows 真机
 - [ ] M2 Busy/一致性测试
 - [ ] M3 扩展 UI
 - [ ] M4 skill 网关形态
