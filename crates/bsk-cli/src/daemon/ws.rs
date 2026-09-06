@@ -724,7 +724,7 @@ mod session_user_interrupt_tests {
         let owner = BrowserId("owner-browser".into());
         let sid = state
             .sessions
-            .reserve_id(owner.clone(), 8, || 0)
+            .reserve_id(owner.clone(), None, 8, || 0)
             .expect("reserved session id");
         let guard = state
             .tool_inflight
@@ -747,7 +747,7 @@ mod session_user_interrupt_tests {
         let attacker = BrowserId("attacker-browser".into());
         let sid = state
             .sessions
-            .reserve_id(owner.clone(), 8, || 0)
+            .reserve_id(owner.clone(), None, 8, || 0)
             .expect("reserved session id");
         let guard = state
             .tool_inflight
@@ -772,7 +772,7 @@ mod session_user_interrupt_tests {
         let owner = BrowserId("owner-browser".into());
         let sid = state
             .sessions
-            .reserve_id(owner.clone(), 8, || 0)
+            .reserve_id(owner.clone(), None, 8, || 0)
             .expect("reserved session id");
 
         handle_session_window_closed(&state, &owner, &serde_json::json!({"session_id": sid.0}));
@@ -790,7 +790,7 @@ mod session_user_interrupt_tests {
         let attacker = BrowserId("attacker-browser".into());
         let sid = state
             .sessions
-            .reserve_id(owner.clone(), 8, || 0)
+            .reserve_id(owner.clone(), None, 8, || 0)
             .expect("reserved session id");
 
         handle_session_window_closed(&state, &attacker, &serde_json::json!({"session_id": sid.0}));

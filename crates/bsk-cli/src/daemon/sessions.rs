@@ -51,6 +51,9 @@ pub struct Session {
     pub browser_id: BrowserId,
     pub agent_window_id: Option<i64>,
     pub created_at_ms: i64,
+    /// Originating agent identity (e.g. `openclaw:main`). Set by CLI
+    /// peers for cross-agent Busy semantics. `None` = unknown/legacy.
+    pub owner_agent: Option<String>,
 }
 
 impl Session {
@@ -103,6 +106,22 @@ impl SessionRegistry {
             .count() as u32
     }
 
+    /// Cross-agent Busy check: return the first owner agent (other than
+    /// `exclude`) with an active session on `browser_id`. `None` when
+    /// nobody else is using that browser (or all sessions belong to the
+    /// caller / are unowned). Unowned sessions (`owner_agent: None`) are
+    /// treated as legacy/local — they never block a claimed agent.
+    pub fn busy_agent_for(&self, browser_id: &BrowserId, exclude: Option<&str>) -> Option<String> {
+        self.inner
+            .lock()
+            .expect("session registry poisoned")
+            .values()
+            .filter(|s| &s.browser_id == browser_id)
+            .filter_map(|s| s.owner_agent.as_deref())
+            .find(|agent| Some(*agent) != exclude)
+            .map(ToString::to_string)
+    }
+
     pub fn insert(&self, session: Session) {
         let session_id = session.id.clone();
         let mut sessions = self.inner.lock().expect("session registry poisoned");
@@ -130,6 +149,7 @@ impl SessionRegistry {
     pub fn reserve_id(
         &self,
         browser_id: BrowserId,
+        owner_agent: Option<String>,
         max_attempts: u32,
         now_ms_fn: impl Fn() -> i64,
     ) -> Option<SessionId> {
@@ -146,6 +166,7 @@ impl SessionRegistry {
                     browser_id: browser_id.clone(),
                     agent_window_id: None,
                     created_at_ms: now_ms_fn(),
+                    owner_agent,
                 },
             );
             self.last_activity
@@ -331,6 +352,11 @@ pub enum StartSessionError {
     },
     #[error("requested browser is not connected")]
     BrowserNotFound,
+    #[error("browser '{browser_instance_id}' is busy: agent '{agent}' has active sessions on it (use --share to override)")]
+    Busy {
+        browser_instance_id: String,
+        agent: String,
+    },
     #[error("label '{label}' matches {} connected browsers", instance_ids.len())]
     AmbiguousBrowserLabel {
         label: String,
@@ -360,6 +386,7 @@ impl StartSessionError {
             StartSessionError::NoBrowserConnected => "no_browser_connected",
             StartSessionError::MultipleBrowsersOnline { .. } => "multiple_browsers_online",
             StartSessionError::BrowserNotFound => "not_found",
+            StartSessionError::Busy { .. } => "busy",
             StartSessionError::AmbiguousBrowserLabel { .. } => "invalid_params",
             StartSessionError::IdExhausted => "protocol_error",
             StartSessionError::Timeout => "timeout",
@@ -427,6 +454,7 @@ pub async fn start_session(
     window: AgentWindowOptions,
     connect_wait: Duration,
     timeout_dur: Duration,
+    owner_agent: Option<String>,
     cancel: Option<AbortToken>,
 ) -> Result<Session, StartSessionError> {
     let selection = registry.select_with_connect_wait(requested, connect_wait);
@@ -453,8 +481,25 @@ pub async fn start_session(
             instance_ids,
         },
     })?;
+
+    // Cross-agent Busy semantics (P0): if another agent has active
+    // sessions on the selected browser, refuse unless the caller
+    // explicitly shares (`--share`). Same-agent multi-session stays
+    // legal (single agent may legitimately open several tabs).
+    if let Some(agent) = sessions.busy_agent_for(&client.id, owner_agent.as_deref()) {
+        return Err(StartSessionError::Busy {
+            browser_instance_id: client.id.0.clone(),
+            agent,
+        });
+    }
+
     let session_id = sessions
-        .reserve_id(client.id.clone(), SESSION_ID_MAX_RESERVE_ATTEMPTS, now_ms)
+        .reserve_id(
+            client.id.clone(),
+            owner_agent,
+            SESSION_ID_MAX_RESERVE_ATTEMPTS,
+            now_ms,
+        )
         .ok_or(StartSessionError::IdExhausted)?;
     let params = SessionStartParams {
         session_id: session_id.0.clone(),

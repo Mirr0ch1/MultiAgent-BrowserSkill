@@ -726,6 +726,10 @@ struct CliSessionStartParams {
     pub height: Option<u32>,
     #[serde(default)]
     pub focused: Option<bool>,
+    /// Originating agent identity (Busy semantics). Absent for legacy
+    /// local clients (treated as unowned / never blocked).
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -833,6 +837,7 @@ async fn handle_session_start(
             width: None,
             height: None,
             focused: None,
+            agent: None,
         }
     } else {
         serde_json::from_value(params).map_err(|err| RpcError {
@@ -865,6 +870,7 @@ async fn handle_session_start(
         },
         state.config.extension_connect_wait,
         DEFAULT_RPC_TIMEOUT,
+        params.agent,
         Some(cancel),
     )
     .await
@@ -886,6 +892,7 @@ fn map_start_error(err: StartSessionError) -> RpcError {
         StartSessionError::NoBrowserConnected => ErrorCode::NoBrowserConnected,
         StartSessionError::MultipleBrowsersOnline { .. } => ErrorCode::MultipleBrowsersOnline,
         StartSessionError::BrowserNotFound => ErrorCode::NotFound,
+        StartSessionError::Busy { .. } => ErrorCode::PermissionDenied,
         StartSessionError::AmbiguousBrowserLabel { .. } => ErrorCode::InvalidParams,
         StartSessionError::IdExhausted => ErrorCode::ProtocolError,
         StartSessionError::Timeout => ErrorCode::Timeout,

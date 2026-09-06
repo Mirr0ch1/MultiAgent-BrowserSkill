@@ -465,6 +465,7 @@ async fn timing_out_session_start_rolls_back_a_late_extension_success() {
         Duration::ZERO,
         Duration::from_millis(20),
         None,
+        None,
     )
     .await;
     assert!(matches!(
@@ -622,6 +623,7 @@ async fn session_idle_timeout_stops_and_unregisters_session() {
         browser_id: bsk::daemon::browsers::BrowserId(TEST_EXT_ID.into()),
         agent_window_id: Some(7),
         created_at_ms: 0,
+        owner_agent: None,
     });
     state.tool_queues.spawn(session_id);
 
@@ -1043,6 +1045,7 @@ async fn session_window_closed_event_purges_session() {
         browser_id: bsk::daemon::browsers::BrowserId(TEST_EXT_ID.into()),
         agent_window_id: Some(7),
         created_at_ms: 0,
+        owner_agent: None,
     };
     state.sessions.insert(session);
     assert_eq!(state.sessions.len(), 1);
@@ -1080,6 +1083,7 @@ async fn browser_disconnect_purges_sessions() {
         browser_id: bsk::daemon::browsers::BrowserId(TEST_EXT_ID.into()),
         agent_window_id: Some(7),
         created_at_ms: 0,
+        owner_agent: None,
     };
     state.sessions.insert(session);
     assert_eq!(state.sessions.len(), 1);
@@ -1109,6 +1113,7 @@ async fn session_stop_self_heals_when_extension_reports_not_found() {
         browser_id: bsk::daemon::browsers::BrowserId(TEST_EXT_ID.into()),
         agent_window_id: Some(99),
         created_at_ms: 1,
+        owner_agent: None,
     };
     state.sessions.insert(session);
     state
@@ -1208,6 +1213,7 @@ async fn reconnect_with_same_instance_id_purges_stale_sessions_but_keeps_new_bro
         browser_id: bsk::daemon::browsers::BrowserId(TEST_EXT_ID.into()),
         agent_window_id: Some(11),
         created_at_ms: 1,
+        owner_agent: None,
     };
     state.sessions.insert(session);
     assert_eq!(state.sessions.len(), 1);
@@ -1252,16 +1258,16 @@ async fn reserve_id_loops_until_vacant_and_caps_attempts() {
     // is random so we cannot assert its value, but we can assert that a
     // second reservation never produces the same id.
     let first = registry
-        .reserve_id(browser.clone(), 64, || 1)
+        .reserve_id(browser.clone(), None, 64, || 1)
         .expect("first reservation should succeed");
     let second = registry
-        .reserve_id(browser.clone(), 64, || 2)
+        .reserve_id(browser.clone(), None, 64, || 2)
         .expect("second reservation should succeed");
     assert_ne!(first, second, "reserve_id must avoid collisions");
     assert_eq!(registry.len(), 2);
 
     // A capped attempts budget of 0 surfaces the IdExhausted condition.
-    let exhausted = registry.reserve_id(browser, 0, || 3);
+    let exhausted = registry.reserve_id(browser, None, 0, || 3);
     assert!(exhausted.is_none(), "0-attempt budget should bail out");
 
     // Cancelling makes the slot vacant again.
