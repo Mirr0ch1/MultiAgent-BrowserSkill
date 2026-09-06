@@ -99,8 +99,8 @@ fork 腾讯 BrowserSkill，把 bsk daemon 改造成**局域网网关/broker（�
 - [x] **M1 完成（9 个 commit，全部测试绿）**：协议 1.2（token/agent_id）+ WS 可配 listen + TCP IPC（首帧 agent-token 认证）+ 互锁 + 禁 auto-update + WS extension_token + TcpClient/remote 短路 + Busy 语义/session 归属 + --share override
 - [x] **M2 完成（e1fac0d，12 个新集成测试全绿）**：测试入口 daemon::run 支持 TCP IPC + token（TcpIpcHandle/bind_server/DaemonHandle.tcp）；gateway_tcp_auth（3）/ gateway_ws_token（4）/ gateway_busy（2）/ gateway_runtime_guards（3）——TCP 认证、WS 扩展 token、跨 agent Busy、互锁、远程 auto-spawn 短路全覆盖
 - [x] **M3 完成（5c1ffcb，扩展侧 15 文件）**：popup 可配 daemon 地址 + 扩展 token——daemon-config 存储层、握手协议 1.2 + HandshakeParams.token、WSTransport.reconfigure 运行时换地址、ConnectionController.replaceTransport/setExtensionToken、background 启动读配置 + popup set_daemon_url/set_extension_token 消息、popup connection 设置视图 + i18n（en/zh）；扩展测试 846 全绿
-- [ ] M4 skill 网关形态
-- [ ] M5 跨机 soak + 文档 + Windows 真机
+- [x] **M4 完成（skill 网关形态，码仓外）**：`~/.openclaw/skills/browser-login/SKILL.md` 与 `browser-auto/SKILL.md` 同步——browser-login 移除 Bash(ssh:*) 与已否的 SSH 接入段，改写为网关直连形态（`bsk --host <ip> --port <port> --agent-token <token>` 全局 flag + BSK_AGENT_TOKEN 环境变量；远程模式不 auto-spawn；先 `bsk browsers` 列注册浏览器、多台询问用户；带 `--agent-id` 保 Busy 语义）；browser-auto 路由引用同步网关描述
+- [ ] M5 跨机 soak + 防火墙/systemd/回滚文档 + Windows 真机
 - [ ] M2 Busy/一致性测试
 - [ ] M3 扩展 UI
 - [ ] M4 skill 网关形态
