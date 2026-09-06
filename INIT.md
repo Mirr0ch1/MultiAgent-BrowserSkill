@@ -104,6 +104,7 @@ fork 腾讯 BrowserSkill，把 bsk daemon 改造成**局域网网关/broker（�
 - [x] **二次审计（GLM-5.3）→ 报告 `AUDIT-FIX-P0P1-GLM53.md`** 通过，无误报
 - [x] **P2 全修 + 局域网段配置完成（17 文件 +285/-23，待 commit）**：`cidr.rs`（IPv4 CIDR 零依赖匹配，11 单测）+ `netdev.rs`（gateway 自动选监听，tailscale0 优先）+ `--lan-cidr` 可重复 flag / `BSK_LAN_CIDRS` env + TCP IPC/WS 对端源 IP 门（ip_allowed：空列表=不限制、loopback 127.0.0.1+::1 放行、IPv4-mapped 解映射）；P2#1 admin 远程拒绝 + doctor 远程分支；P2#3 认证失败 warn+peer；P2#4 App.test stub（846 全绿 exit 0）；P2#7 update 网关 guard；P2#8 删误导文案；P2#9 popup URL 校验 + token password + i18n；P2#2 skill 披露 Busy 非隔离
 - [x] **P2+LAN 审计（GLM-5.3）→ `AUDIT-P2LAN-GLM53.md`**：主线全接通安全方向正确（cargo 7 + pnpm 846）；检出 F1（P1 Windows 构建破坏：if-addrs 放 unix-only deps 但 netdev 无条件引用 → 移入公共 [dependencies]）+ F2（::1 被拒 → ip_allowed 放行）+ F3（IPv4-mapped 拒绝 → 解映射）+ F4（已运行 daemon CIDR 漂移静默 → warn）+ F5（非法 CIDR 静默塌缩 → warn）+ N1/N2 记录在案；修复后 cargo 286 lib 全绿 + 集成全绿，扩展 846 全绿
+- [x] **开源发布（2026-09-07，commit e83f462 文档 + gh repo create）**：重写 README.md / README.zh-CN.md 为网关形态全量描述（多 Agent×多浏览器 LAN broker、token 双角色、协议 1.2、LAN CIDR 白名单、Busy+--share、互锁、远程 CLI、扩展端点可配置）+ AGENT_INSTALL 改源码构建引导 + install.sh/install.ps1 默认 BSK_REPO 改新仓库 + crates/bsk-cli/README 上游引用更新；`gh repo create Mirr0ch1/MultiAgent-BrowserSkill --public`（标准拼写，米罗原话 typo 已确认）→ https://github.com/Mirr0ch1/MultiAgent-BrowserSkill ；remote：origin=新仓库，upstream=Tencent/BrowserSkill；LICENSE 保留 MIT 上游版权
 - [ ] M5 跨机 soak + 防火墙/systemd/回滚文档 + Windows 真机
 
 ## 9. 相关文件索引
