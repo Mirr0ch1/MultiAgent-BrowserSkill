@@ -98,7 +98,7 @@ fork 腾讯 BrowserSkill，把 bsk daemon 改造成**局域网网关/broker（�
 - [x] 基线：`cargo test -p bsk -- --test-threads=1` **274 全绿**存档（分支 feature/gateway；并行首跑 1 个失败为 env 竞争 flaky，串行通过）
 - [x] **M1 完成（9 个 commit，全部测试绿）**：协议 1.2（token/agent_id）+ WS 可配 listen + TCP IPC（首帧 agent-token 认证）+ 互锁 + 禁 auto-update + WS extension_token + TcpClient/remote 短路 + Busy 语义/session 归属 + --share override
 - [x] **M2 完成（e1fac0d，12 个新集成测试全绿）**：测试入口 daemon::run 支持 TCP IPC + token（TcpIpcHandle/bind_server/DaemonHandle.tcp）；gateway_tcp_auth（3）/ gateway_ws_token（4）/ gateway_busy（2）/ gateway_runtime_guards（3）——TCP 认证、WS 扩展 token、跨 agent Busy、互锁、远程 auto-spawn 短路全覆盖
-- [ ] M3 扩展 UI（popup IP 配置，可降级）
+- [x] **M3 完成（5c1ffcb，扩展侧 15 文件）**：popup 可配 daemon 地址 + 扩展 token——daemon-config 存储层、握手协议 1.2 + HandshakeParams.token、WSTransport.reconfigure 运行时换地址、ConnectionController.replaceTransport/setExtensionToken、background 启动读配置 + popup set_daemon_url/set_extension_token 消息、popup connection 设置视图 + i18n（en/zh）；扩展测试 846 全绿
 - [ ] M4 skill 网关形态
 - [ ] M5 跨机 soak + 文档 + Windows 真机
 - [ ] M2 Busy/一致性测试
