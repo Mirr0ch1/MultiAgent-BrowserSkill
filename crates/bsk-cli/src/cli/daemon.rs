@@ -52,6 +52,15 @@ pub struct StartArgs {
     #[arg(long)]
     pub gateway: bool,
 
+    /// Gateway agent token (full privilege, CLI peers). Required for
+    /// non-loopback binds. Also accept `--token` as shorthand.
+    #[arg(long, value_name = "TOKEN")]
+    pub agent_token: Option<String>,
+
+    /// Gateway extension token (register-only, browser extension peers).
+    #[arg(long, value_name = "TOKEN")]
+    pub extension_token: Option<String>,
+
     /// Run in the foreground (do not double-fork). Useful for development.
     #[arg(long)]
     pub foreground: bool,

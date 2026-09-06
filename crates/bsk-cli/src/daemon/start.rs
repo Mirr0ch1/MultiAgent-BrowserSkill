@@ -68,6 +68,10 @@ pub struct DaemonConfig {
     /// non-loopback binds require a configured token and idle/
     /// auto-spawn/auto-update are disabled.
     pub gateway_mode: bool,
+    /// Full-privilege token for remote CLI peers (gateway).
+    pub agent_token: Option<String>,
+    /// Register-only token for browser-extension peers (gateway).
+    pub extension_token: Option<String>,
 }
 
 impl DaemonConfig {
@@ -86,6 +90,8 @@ impl DaemonConfig {
             browser_liveness_timeout: BROWSER_LIVENESS_TIMEOUT,
             browser_liveness_tick: BROWSER_LIVENESS_TICK,
             gateway_mode: false,
+            agent_token: None,
+            extension_token: None,
         }
     }
 
@@ -117,6 +123,8 @@ impl From<&StartArgs> for DaemonConfig {
             browser_liveness_timeout: BROWSER_LIVENESS_TIMEOUT,
             browser_liveness_tick: BROWSER_LIVENESS_TICK,
             gateway_mode: args.gateway,
+            agent_token: args.agent_token.clone(),
+            extension_token: args.extension_token.clone(),
         }
     }
 }
@@ -355,6 +363,46 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
             ))
         };
 
+        // TCP IPC listener (gateway remote CLI peers). Spawned only when
+        // `--agent-port` is set. Every connection must authenticate with
+        // a first-frame `system.handshake` carrying `agent_token`.
+        let tcp_task = match cfg.agent_port {
+            Some(port) => {
+                let tcp_addr = SocketAddr::new(cfg.listen_ip, port);
+                let tcp_listener = ipc::tcp::bind(tcp_addr)
+                    .await
+                    .with_context(|| format!("bind TCP IPC on {tcp_addr}"))?;
+                let handler = handler.clone();
+                let ipc_open = {
+                    let activity = activity.clone();
+                    move || record_ipc_open(&activity)
+                };
+                let ipc_activity = {
+                    let activity = activity.clone();
+                    move || record_activity(&activity)
+                };
+                let ipc_close = {
+                    let activity = activity.clone();
+                    move || record_ipc_close(&activity)
+                };
+                let (tcp_shutdown_tx, tcp_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+                let task = tokio::spawn(ipc::tcp::serve(
+                    tcp_listener,
+                    handler,
+                    cfg.agent_token.clone(),
+                    ipc_open,
+                    ipc_activity,
+                    ipc_close,
+                    async move {
+                        let _ = tcp_shutdown_rx.await;
+                    },
+                ));
+                info!(addr = %tcp_addr, "tcp ipc listener started");
+                Some((task, tcp_shutdown_tx))
+            }
+            None => None,
+        };
+
         let (_idle_tx, idle_rx) = tokio::sync::oneshot::channel::<()>();
         let idle_task = {
             let activity = activity.clone();
@@ -417,6 +465,10 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
 
         let _ = ipc_shutdown_tx.send(());
         let _ = ipc_task.await;
+        if let Some((tcp_task, tcp_shutdown_tx)) = tcp_task {
+            let _ = tcp_shutdown_tx.send(());
+            let _ = tcp_task.await;
+        }
         session_idle_task.abort();
         let _ = session_idle_task.await;
         browser_liveness_task.abort();
@@ -700,6 +752,8 @@ fn restart_start_args(cfg: &DaemonConfig) -> StartArgs {
         listen: Some(cfg.listen_ip),
         agent_port: cfg.agent_port,
         gateway: cfg.gateway_mode,
+        agent_token: cfg.agent_token.clone(),
+        extension_token: cfg.extension_token.clone(),
         foreground: false,
         session_idle: Some(cfg.session_idle),
         daemon_idle: cfg.daemon_idle,

@@ -1472,6 +1472,221 @@ mod windows {
 #[cfg(windows)]
 pub use windows::{bind, serve};
 
+// ----- Transport: TCP IPC (gateway remote CLI peers) -----
+
+pub(crate) mod tcp {
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+
+    use anyhow::{Context, Result};
+    use bsk_protocol::{
+        ErrorCode, Frame, Method, RequestFrame, ResponseBody, RpcError, RpcId,
+    };
+    use serde_json::Value;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::{TcpListener, TcpStream};
+    use tracing::{debug, info, warn};
+
+    use super::RpcHandler;
+
+    /// Hard cap on how long the daemon waits for the TCP IPC handshake
+    /// first frame (mirrors ws::HANDSHAKE_FIRST_FRAME_TIMEOUT).
+    const HANDSHAKE_FIRST_FRAME_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(5);
+
+    pub async fn bind(addr: SocketAddr) -> Result<TcpListener> {
+        TcpListener::bind(addr)
+            .await
+            .with_context(|| format!("bind TCP IPC {addr}"))
+    }
+
+    /// Run the TCP IPC server loop until `shutdown` resolves.
+    ///
+    /// `expected_agent_token = Some(t)` requires every connection to
+    /// authenticate with a first-frame `system.handshake` carrying that
+    /// token. `None` refuses all connections (no token configured means
+    /// no remote peers — this transport is network-exposed by design).
+    pub async fn serve<S>(
+        listener: TcpListener,
+        handler: RpcHandler,
+        expected_agent_token: Option<String>,
+        on_open: impl Fn() + Send + Sync + 'static,
+        on_activity: impl Fn() + Send + Sync + 'static,
+        on_close: impl Fn() + Send + Sync + 'static,
+        shutdown: S,
+    ) where
+        S: std::future::Future<Output = ()> + Send + 'static,
+    {
+        info!("tcp ipc server listening");
+        let on_open = Arc::new(on_open);
+        let on_activity = Arc::new(on_activity);
+        let on_close = Arc::new(on_close);
+        tokio::pin!(shutdown);
+        loop {
+            tokio::select! {
+                _ = &mut shutdown => {
+                    info!("tcp ipc server shutdown requested");
+                    break;
+                }
+                accepted = listener.accept() => {
+                    match accepted {
+                        Ok((stream, peer)) => {
+                            on_open();
+                            let handler = handler.clone();
+                            let on_act = on_activity.clone();
+                            let on_done = on_close.clone();
+                            let token = expected_agent_token.clone();
+                            tokio::spawn(async move {
+                                if let Err(err) = handle_connection(stream, handler, token, on_act).await {
+                                    debug!(?err, %peer, "tcp ipc connection ended with error");
+                                }
+                                on_done();
+                            });
+                        }
+                        Err(err) => {
+                            warn!(?err, "tcp ipc accept failed");
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn handle_connection(
+        stream: TcpStream,
+        handler: RpcHandler,
+        expected_token: Option<String>,
+        on_activity: Arc<dyn Fn() + Send + Sync>,
+    ) -> Result<()> {
+        let (read_half, mut write_half) = stream.into_split();
+        let mut reader = BufReader::new(read_half);
+        let mut line = String::new();
+        let mut authed = false;
+
+        loop {
+            line.clear();
+            let n = if authed {
+                reader.read_line(&mut line).await?
+            } else {
+                // Bound the wait for the very first (handshake) frame so
+                // an unauthenticated peer cannot pin this task + socket
+                // forever (mirrors ws::HANDSHAKE_FIRST_FRAME_TIMEOUT).
+                match tokio::time::timeout(
+                    HANDSHAKE_FIRST_FRAME_TIMEOUT,
+                    reader.read_line(&mut line),
+                )
+                .await
+                {
+                    Ok(Ok(n)) => n,
+                    Ok(Err(err)) => return Err(err.into()),
+                    Err(_) => {
+                        debug!("tcp ipc handshake timeout; dropping connection");
+                        return Ok(());
+                    }
+                }
+            };
+            if n == 0 {
+                break;
+            }
+            on_activity();
+            let trimmed = line.trim_end_matches(['\n', '\r']);
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let response = match serde_json::from_str::<Frame>(trimmed) {
+                Ok(Frame::Request(RequestFrame { id, method, params })) => {
+                    let params = params.unwrap_or(Value::Null);
+                    if !authed {
+                        match authenticate_first_frame(id, method, params, &expected_token) {
+                            Ok(()) => {
+                                authed = true;
+                                serde_json::to_string(&Frame::Response(
+                                    bsk_protocol::ResponseFrame {
+                                        id: RpcId::from("hs"),
+                                        body: ResponseBody::Ok(serde_json::json!({
+                                            "server": "browser-skill-daemon",
+                                            "authenticated": true,
+                                        })),
+                                    },
+                                ))?
+                            }
+                            Err((id, msg)) => serde_json::to_string(&Frame::Response(
+                                bsk_protocol::ResponseFrame {
+                                    id,
+                                    body: ResponseBody::Err(RpcError {
+                                        code: ErrorCode::ProtocolError,
+                                        message: msg,
+                                        data: None,
+                                    }),
+                                },
+                            ))?,
+                        }
+                    } else {
+                        let body = (handler)(id.clone(), method, params).await;
+                        serde_json::to_string(&Frame::Response(bsk_protocol::ResponseFrame {
+                            id,
+                            body,
+                        }))?
+                    }
+                }
+                Ok(other) => {
+                    debug!(?other, "tcp ipc client sent non-request frame");
+                    continue;
+                }
+                Err(err) => serde_json::to_string(&Frame::Response(
+                    bsk_protocol::ResponseFrame {
+                        id: "0".into(),
+                        body: ResponseBody::Err(RpcError {
+                            code: ErrorCode::ProtocolError,
+                            message: format!("invalid frame: {err}"),
+                            data: None,
+                        }),
+                    },
+                ))?,
+            };
+
+            write_half.write_all(response.as_bytes()).await?;
+            write_half.write_all(b"\n").await?;
+            write_half.flush().await?;
+
+            // After a failed/denied handshake the connection is closed;
+            // an authenticated connection continues the loop.
+            if !authed {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate the TCP IPC handshake first frame. Success means the
+    /// connection is authenticated; `Err((id, message))` replies and
+    /// drops the peer.
+    fn authenticate_first_frame(
+        id: RpcId,
+        method: Method,
+        params: Value,
+        expected_token: &Option<String>,
+    ) -> std::result::Result<(), (RpcId, String)> {
+        if !matches!(method, Method::SystemHandshake) {
+            return Err((id, "first frame must be system.handshake".into()));
+        }
+        let Some(exp) = expected_token else {
+            return Err((id, "tcp ipc: no agent token configured; connection refused".into()));
+        };
+        let got = params
+            .get("token")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if got == exp {
+            Ok(())
+        } else {
+            Err((id, "tcp ipc handshake failed: invalid token".into()))
+        }
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
