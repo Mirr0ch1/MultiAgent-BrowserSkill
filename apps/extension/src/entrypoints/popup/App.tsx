@@ -9,6 +9,7 @@ import {
 } from "@remixicon/react";
 import { type ChangeEvent, useEffect, useState } from "react";
 import { PROTOCOL_VERSION } from "@/transport/handshake";
+import { getDaemonWsUrl, getExtensionToken } from "@/lib/daemon-config";
 import functionIconUrl from "../../../assets/function.svg";
 import { ConnectionStatusIndicator } from "./connection-status-indicator";
 import { POPUP_FEATURES, type PopupView } from "./features";
@@ -39,12 +40,17 @@ function getLogoSrc() {
 
 export function App() {
   const { t } = useTranslation("extension");
-  const { snapshot, statusState, setConnectionEnabled } = useConnectionState();
+  const { snapshot, statusState, setConnectionEnabled, setDaemonUrl, setExtensionToken } =
+    useConnectionState();
   const [controlHintsHidden, setControlHintsHidden] = useControlHintsHidden();
   const [view, setView] = useState<PopupView>("main");
   const [copiedInstanceId, setCopiedInstanceId] = useState(false);
   const [purposeDraft, setPurposeDraft] = useState("");
   const [startUrlDraft, setStartUrlDraft] = useState("");
+  // M3 connection settings drafts (loaded from storage on mount).
+  const [daemonUrlDraft, setDaemonUrlDraft] = useState("");
+  const [extensionTokenDraft, setExtensionTokenDraft] = useState("");
+  const [settingsSaved, setSettingsSaved] = useState(false);
   // Bumped on every successful copy so the "copied" toast re-shows (and its
   // auto-hide timer restarts) even when the copied content is unchanged.
   const [copiedTick, setCopiedTick] = useState(0);
@@ -65,6 +71,30 @@ export function App() {
     setCopiedInstanceId(false);
     setCopiedTick(0);
   }, [snapshot.instanceId]);
+
+  // Load persisted gateway settings into the connection-settings view.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [url, token] = await Promise.all([
+        getDaemonWsUrl(),
+        getExtensionToken(),
+      ]);
+      if (cancelled) return;
+      setDaemonUrlDraft(url);
+      setExtensionTokenDraft(token);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveConnectionSettings = () => {
+    setDaemonUrl(daemonUrlDraft.trim());
+    setExtensionToken(extensionTokenDraft.trim());
+    setSettingsSaved(true);
+    window.setTimeout(() => setSettingsSaved(false), 1500);
+  };
 
   // Hide the copied toast when the command changes (topic / start URL edits).
   useEffect(() => {
@@ -120,7 +150,9 @@ export function App() {
       ? t("popup.launcher.title")
       : view === "record"
         ? t("popup.record.sectionTitle")
-        : t("popup.brandName");
+        : view === "connection"
+          ? t("popup.connection.sectionTitle")
+          : t("popup.brandName");
 
   return (
     <main
@@ -140,7 +172,7 @@ export function App() {
             size="icon"
             className="size-7 shrink-0 rounded-md"
             aria-label={t("popup.back")}
-            onClick={() => setView(view === "record" ? "features" : "main")}
+            onClick={() => setView(view === "record" || view === "connection" ? "features" : "main")}
             data-slot="popup-back"
           >
             <RiArrowLeftLine className="size-4" aria-hidden />
@@ -408,6 +440,76 @@ export function App() {
               >
                 <RiFileCopyLine className="size-3.5" aria-hidden />
                 {t("popup.record.copyButton")}
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
+      {view === "connection" && (
+        <section className="space-y-2.5" data-slot="popup-connection-body">
+          <p
+            className="text-[11px] leading-snug text-muted-foreground"
+            data-slot="popup-connection-hint-desc"
+          >
+            {t("popup.connection.cardDesc")}
+          </p>
+          <div className="flex flex-col gap-1.5" data-slot="popup-connection-daemon-field">
+            <Label htmlFor="bh-connection-url" className="block text-xs text-muted-foreground">
+              {t("popup.connection.daemonUrlLabel")}
+            </Label>
+            <Input
+              id="bh-connection-url"
+              type="text"
+              value={daemonUrlDraft}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setDaemonUrlDraft(event.target.value)
+              }
+              placeholder={t("popup.connection.daemonUrlPlaceholder")}
+              className="mt-0 h-8 text-sm"
+              data-slot="popup-connection-daemon-input"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5" data-slot="popup-connection-token-field">
+            <Label htmlFor="bh-connection-token" className="block text-xs text-muted-foreground">
+              {t("popup.connection.extensionTokenLabel")}
+            </Label>
+            <Input
+              id="bh-connection-token"
+              type="text"
+              value={extensionTokenDraft}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setExtensionTokenDraft(event.target.value)
+              }
+              placeholder={t("popup.connection.extensionTokenPlaceholder")}
+              className="mt-0 h-8 text-sm"
+              data-slot="popup-connection-token-input"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] text-muted-foreground" data-slot="popup-connection-hint">
+              {t("popup.connection.saveHint")}
+            </p>
+            <div className="relative ml-auto shrink-0">
+              {settingsSaved && (
+                <div
+                  role="status"
+                  className="absolute bottom-full right-0 mb-1.5 flex items-center gap-1 whitespace-nowrap rounded-md bg-foreground/65 px-2 py-1 text-[10px] font-medium text-background shadow-md backdrop-blur-sm"
+                  data-slot="popup-connection-saved-toast"
+                >
+                  <RiCheckLine className="size-3" aria-hidden />
+                  {t("popup.connection.saved")}
+                </div>
+              )}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                disabled={!daemonUrlDraft.trim()}
+                onClick={saveConnectionSettings}
+                data-slot="popup-connection-save"
+              >
+                {t("popup.connection.save")}
               </Button>
             </div>
           </div>

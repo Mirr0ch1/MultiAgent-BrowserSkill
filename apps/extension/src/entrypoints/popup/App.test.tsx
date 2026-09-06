@@ -33,6 +33,8 @@ function openRecordView() {
 describe("App", () => {
   const setLabel = vi.fn();
   const setConnectionEnabled = vi.fn();
+  const setDaemonUrl = vi.fn();
+  const setExtensionToken = vi.fn();
 
   beforeEach(() => {
     mockUseConnectionState.mockReturnValue({
@@ -40,6 +42,8 @@ describe("App", () => {
       statusState: "disconnected",
       setLabel,
       setConnectionEnabled,
+      setDaemonUrl,
+      setExtensionToken,
     });
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -116,6 +120,8 @@ describe("App", () => {
       statusState: "connected",
       setLabel,
       setConnectionEnabled,
+      setDaemonUrl,
+      setExtensionToken,
     });
 
     render(<App />);
@@ -155,6 +161,8 @@ describe("App", () => {
       statusState: "disabled",
       setLabel,
       setConnectionEnabled,
+      setDaemonUrl,
+      setExtensionToken,
     });
 
     render(<App />);
@@ -180,6 +188,8 @@ describe("App", () => {
       statusState: "connected",
       setLabel,
       setConnectionEnabled,
+      setDaemonUrl,
+      setExtensionToken,
     });
 
     render(<App />);
@@ -223,6 +233,8 @@ describe("App", () => {
       statusState: "connected",
       setLabel,
       setConnectionEnabled,
+      setDaemonUrl,
+      setExtensionToken,
     });
 
     render(<App />);
@@ -263,6 +275,8 @@ describe("App", () => {
       statusState: "version_skew",
       setLabel,
       setConnectionEnabled,
+      setDaemonUrl,
+      setExtensionToken,
     });
 
     render(<App />);

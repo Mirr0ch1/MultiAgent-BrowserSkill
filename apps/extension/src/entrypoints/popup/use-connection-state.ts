@@ -40,19 +40,18 @@ const FALLBACK_SNAPSHOT: SnapshotInfo = {
 /**
  * Live snapshot of the background's `ConnectionController` for popup UI.
  *
- * Posts `set_label` mutations back to the background; the incoming
- * snapshot stream reflects the canonical state. The `set_port` channel
- * is defined by the popup-bridge but is not currently routed to the
- * background — wiring it requires `ConnectionController` to swap its
- * Transport URL and persist the chosen port. Tracked for a follow-up
- * milestone; the popup intentionally does not expose a control until
- * the underlying support lands (review M4/M5 C2).
+ * Posts `set_label` / `set_daemon_url` / `set_extension_token`
+ * mutations back to the background; the incoming snapshot stream
+ * reflects the canonical state. M3 wires the daemon-address + token
+ * controls that the popup-bridge protocol defined as placeholders.
  */
 export function useConnectionState(): {
   snapshot: SnapshotInfo;
   statusState: PopupStatusState;
   setLabel: (value: string) => void;
   setConnectionEnabled: (value: boolean) => void;
+  setDaemonUrl: (value: string) => void;
+  setExtensionToken: (value: string) => void;
 } {
   const [snapshot, setSnapshot] = useState<SnapshotInfo>(FALLBACK_SNAPSHOT);
   const portRef = useRef<chrome.runtime.Port | null>(null);
@@ -99,5 +98,7 @@ export function useConnectionState(): {
     statusState,
     setLabel: (value: string) => post({ kind: "set_label", value }),
     setConnectionEnabled: (value: boolean) => post({ kind: "set_connection_enabled", value }),
+    setDaemonUrl: (value: string) => post({ kind: "set_daemon_url", value }),
+    setExtensionToken: (value: string) => post({ kind: "set_extension_token", value }),
   };
 }

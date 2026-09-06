@@ -18,6 +18,15 @@ export const POPUP_PORT_NAME = "popup";
 export type PopupOutbound =
   | { kind: "set_label"; value: string }
   | { kind: "set_port"; value: number }
+  | { kind: "set_daemon_url"; value: string }
+  | { kind: "set_extension_token"; value: string }
   | { kind: "set_connection_enabled"; value: boolean };
 
 export type PopupInbound = { kind: "snapshot"; data: SnapshotInfo };
+
+export interface DaemonSettings {
+  /** Effective gateway WS endpoint (resolved from storage). */
+  daemonUrl: string;
+  /** Persisted extension token (may be empty in loopback mode). */
+  extensionToken: string;
+}

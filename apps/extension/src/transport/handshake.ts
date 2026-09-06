@@ -7,7 +7,7 @@ import type {
   ResponseFrame,
 } from "./types";
 
-export const PROTOCOL_VERSION = "1.1";
+export const PROTOCOL_VERSION = "1.2";
 /**
  * Extension semver, injected at build time from `package.json` via
  * Vite's `define` (see `wxt.config.ts` and `vitest.config.ts`).
@@ -35,6 +35,11 @@ export interface HandshakeInput {
   instanceId: string;
   browser: BrowserMeta;
   label: string;
+  /**
+   * Gateway extension token (M1: daemon rejects handshake without it
+   * when `extension_token` is configured). Empty for loopback mode.
+   */
+  token?: string;
   /**
    * Used to make the handshake's RPC id stable in tests. Defaults to a
    * random short string.
@@ -69,6 +74,7 @@ export function performHandshake(
     label: input.label,
     min_compatible_peer: MIN_COMPATIBLE_PEER,
     min_compatible_protocol: MIN_COMPATIBLE_PROTOCOL,
+    token: input.token ?? undefined,
   };
 
   const req: RequestFrame = { id, method: "system.handshake", params };

@@ -40,7 +40,7 @@ interface MessageLikeEvent {
  *    (1s, 2s, 4s, …, capped at 5s) until `disconnect()` is called.
  */
 export class WSTransport implements Transport {
-  private readonly url: string;
+  private url: string;
   private readonly factory: WebSocketFactory;
   private readonly initialDelayMs: number;
   private readonly maxDelayMs: number;
@@ -120,6 +120,29 @@ export class WSTransport implements Transport {
     this.resolveConnect = null;
     this.rejectConnect = null;
     reject?.(new Error("[WSTransport] disconnect during connect"));
+  }
+
+  /**
+   * Retarget this transport to a new gateway endpoint (M3: popup
+   * changes the daemon address at runtime). Teardowns the current
+   * socket and reconnects with `force` (same-url restart is used by
+   * the token-change flow to force a fresh handshake). Callers that
+   * hold a reference to this transport (dispatcher, keepalive,
+   * heartbeat, ConnectionController) keep working — the object is the
+   * same, only the endpoint changed.
+   */
+  async reconfigure(url: string, force = false): Promise<void> {
+    if (!force && url === this.url) return;
+    this.url = url;
+    this.reconnectAttempt = 0;
+    // Kill the current socket + pending reconnect timer. `disconnect`
+    // marks the transport as explicitly closed, so clear that flag
+    // before reconnecting.
+    await this.disconnect().catch(() => {});
+    this.explicitlyClosed = false;
+    await this.connect().catch((err) => {
+      console.warn("[WSTransport] reconfigure connect failed", err);
+    });
   }
 
   send(msg: ProtocolFrame): void {

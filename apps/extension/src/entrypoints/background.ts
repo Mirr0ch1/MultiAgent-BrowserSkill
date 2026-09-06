@@ -1,6 +1,12 @@
 import { i18n } from "@browser-skill/i18n";
 import { ChromiumCdp } from "@/browser-driver/chromium-cdp";
 import { ConnectionController } from "@/lib/connection-controller";
+import {
+  getDaemonWsUrl,
+  getExtensionToken,
+  setDaemonWsUrl,
+  setExtensionToken,
+} from "@/lib/daemon-config";
 import { startHeartbeat } from "@/lib/heartbeat";
 import {
   getConnectionEnabled,
@@ -324,6 +330,16 @@ export default defineBackground(() => {
 
   void (async () => {
     const connectionEnabled = await getConnectionEnabled();
+    // M3: read the runtime-configured gateway endpoint + extension token
+    // (popup settable). Falls back to the build-time default URL.
+    const daemonUrl = await getDaemonWsUrl();
+    const extensionToken = await getExtensionToken();
+    if (daemonUrl !== __BSK_DAEMON_WS_URL__) {
+      await transport.reconfigure(daemonUrl).catch((err) => {
+        console.warn("[browser-skill] initial daemon url reconfigure failed", err);
+      });
+    }
+    controller.setExtensionToken(extensionToken);
     await controller.attach(transport, detectBrowserMeta(), connectionEnabled, {
       beforeDisconnect: async () => {
         const report = await cleanupAfterDisconnect();
@@ -403,6 +419,22 @@ export default defineBackground(() => {
           void controller
             .setConnectionEnabled(msg.value)
             .then(() => persistConnectionEnabled(msg.value));
+        } else if (msg.kind === "set_daemon_url") {
+          void setDaemonWsUrl(msg.value).then(() =>
+            transport.reconfigure(msg.value).catch((err) => {
+              console.warn("[browser-skill] daemon url reconfigure failed", err);
+            }),
+          );
+        } else if (msg.kind === "set_extension_token") {
+          void setExtensionToken(msg.value).then(async () => {
+            controller.setExtensionToken(msg.value);
+            // Force a reconnect so the new token takes effect on the
+            // next handshake (same endpoint, fresh socket).
+            const current = await getDaemonWsUrl();
+            await transport.reconfigure(current, true).catch((err) => {
+              console.warn("[browser-skill] token reconfigure failed", err);
+            });
+          });
         }
       }
     });

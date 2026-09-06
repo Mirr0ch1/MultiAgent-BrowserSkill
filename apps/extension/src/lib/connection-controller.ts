@@ -51,6 +51,10 @@ export class ConnectionController {
   private handshakeAbort: AbortController | null = null;
   private handshakeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private suppressDisconnectRecovery = false;
+  /** Gateway extension token (M3); empty string = loopback mode. */
+  private extensionToken = "";
+  /** Browser meta captured at last attach; reused by replaceTransport. */
+  private browserMeta: { name: string; version: string } | null = null;
 
   get isConnectionEnabled(): boolean {
     return this.connectionEnabled;
@@ -85,6 +89,7 @@ export class ConnectionController {
     lifecycleHooks: ConnectionLifecycleHooks = {},
   ): Promise<void> {
     this.transport = transport;
+    this.browserMeta = browser;
     this.connectionEnabled = connectionEnabled;
     this.lifecycleHooks = lifecycleHooks;
     this.instanceId = await getOrCreateInstanceId();
@@ -156,6 +161,36 @@ export class ConnectionController {
     this.fire();
   }
 
+  /**
+   * Swap the underlying transport after a runtime daemon-address change
+   * (M3). Preserves connection-enabled state and lifecycle hooks, tears
+   * down the old transport, attaches the new one, and reconnects when
+   * enabled. The popup calls this through the `set_daemon_url` bridge
+   * message.
+   */
+  async replaceTransport(transport: Transport): Promise<void> {
+    const enabled = this.connectionEnabled;
+    const hooks = this.lifecycleHooks;
+    const browser = this.browserMeta ?? { name: "chromium", version: "unknown" };
+    // Deliberate swap: suppress unexpected-loss recovery for the old
+    // transport's disconnect so it does not race the re-attach.
+    this.suppressDisconnectRecovery = true;
+    if (this.transport) {
+      await this.transport.disconnect().catch(() => {});
+    }
+    this.suppressDisconnectRecovery = false;
+    await this.attach(transport, browser, enabled, hooks);
+  }
+
+  /**
+   * Set the gateway extension token used in `system.handshake` (M3).
+   * Persisting the value is the caller's job; on the next (re)connect
+   * the handshake carries it.
+   */
+  setExtensionToken(token: string): void {
+    this.extensionToken = token;
+  }
+
   private startHandshake(browser: { name: string; version: string }): void {
     this.cancelHandshake();
     const generation = ++this.connectionGeneration;
@@ -179,6 +214,7 @@ export class ConnectionController {
           instanceId: this.instanceId,
           browser,
           label: this.label,
+          token: this.extensionToken || undefined,
         },
         { signal },
       );

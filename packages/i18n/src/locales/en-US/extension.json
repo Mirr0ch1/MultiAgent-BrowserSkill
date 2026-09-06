@@ -57,6 +57,17 @@
       "copied": "Copied",
       "hintDisconnected": "Available when connected",
       "promptTemplate": "Use BrowserSkill's `bsk` CLI to record the browser actions I'm about to demonstrate.\n\nSteps:\n1. Run: {{command}}\n2. Once you confirm it's started, I'll operate in the opened window myself.\n3. After I click Finish, read the written `./trace` bundle (`trace.json` + `states/`) and summarize what I did."
+    },
+    "connection": {
+      "sectionTitle": "Connection settings",
+      "cardDesc": "Set the gateway daemon address and extension token",
+      "daemonUrlLabel": "Daemon address",
+      "daemonUrlPlaceholder": "ws://127.0.0.1:52800",
+      "extensionTokenLabel": "Extension token",
+      "extensionTokenPlaceholder": "Optional, for token-enforcing gateways",
+      "save": "Save",
+      "saved": "Saved",
+      "saveHint": "Changes reconnect to the new daemon"
     }
   },
   "controlOverlay": {

@@ -120,6 +120,8 @@ export interface HandshakeParams {
   min_compatible_peer?: string;
   /** Lowest daemon **protocol** version this extension accepts. */
   min_compatible_protocol?: string;
+  /** Gateway extension token (M3); empty/absent for loopback mode. */
+  token?: string;
 }
 
 export interface HandshakeResult {

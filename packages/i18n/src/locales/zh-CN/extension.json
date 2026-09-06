@@ -57,6 +57,17 @@
       "copied": "已复制",
       "hintDisconnected": "连接后可用",
       "promptTemplate": "用 BrowserSkill 的 `bsk` CLI 录制我接下来的浏览器操作。\n\n步骤：\n1. 执行：{{command}}\n2. 你确认已开始后，我会在打开的窗口里自己操作。\n3. 我点“结束”后，读取写出的 `./trace` 目录包（`trace.json` + `states/`），总结我做了什么。"
+    },
+    "connection": {
+      "sectionTitle": "连接设置",
+      "cardDesc": "配置网关 daemon 地址与扩展 token",
+      "daemonUrlLabel": "Daemon 地址",
+      "daemonUrlPlaceholder": "ws://127.0.0.1:52800",
+      "extensionTokenLabel": "扩展 token",
+      "extensionTokenPlaceholder": "可选，用于启用 token 校验的网关",
+      "save": "保存",
+      "saved": "已保存",
+      "saveHint": "保存后重连到新 daemon"
     }
   },
   "controlOverlay": {
