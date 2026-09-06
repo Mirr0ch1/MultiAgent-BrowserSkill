@@ -280,6 +280,32 @@ async fn drive_connection(
         HandshakeCompat::Ok => false,
     };
 
+    // Gateway auth (P0): when the daemon is configured with an extension
+    // token, the extension must present it in `system.handshake`. Absent
+    // daemon token = loopback/local mode, upstream registration flow
+    // unchanged.
+    if let Some(expected) = state.config.extension_token.as_deref() {
+        let provided = params.token.as_deref().unwrap_or("");
+        if provided != expected {
+            let resp = ResponseFrame {
+                id: request.id.clone(),
+                body: ResponseBody::Err(RpcError {
+                    code: bsk_protocol::ErrorCode::PermissionDenied,
+                    message: "extension token mismatch; connection rejected".into(),
+                    data: None,
+                }),
+            };
+            let _ = writer
+                .send(Message::Text(serde_json::to_string(&resp)?))
+                .await;
+            warn!(
+                peer = %params.instance_id,
+                "ws handshake rejected: extension token mismatch"
+            );
+            return Err(anyhow!("kicked: extension token mismatch"));
+        }
+    }
+
     // Register browser & build outbound sink. Each registration gets a
     // fresh `generation` so a reconnect under the same `instance_id`
     // can be told apart from the previous BrowserClient — the old
