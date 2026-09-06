@@ -1,5 +1,7 @@
 //! `bsk` CLI internals shared with binary and integration tests.
 
+pub mod cidr;
+pub mod netdev;
 pub mod cli;
 pub mod daemon;
 pub mod ipc_client;

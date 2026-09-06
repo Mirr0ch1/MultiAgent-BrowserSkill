@@ -67,7 +67,8 @@
       "extensionTokenPlaceholder": "可选，用于启用 token 校验的网关",
       "save": "保存",
       "saved": "已保存",
-      "saveHint": "保存后重连到新 daemon"
+      "saveHint": "保存后重连到新 daemon",
+      "urlError": "Daemon 地址必须以 ws:// 或 wss:// 开头"
     }
   },
   "controlOverlay": {

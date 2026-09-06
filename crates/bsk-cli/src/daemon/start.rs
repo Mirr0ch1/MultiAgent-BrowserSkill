@@ -72,6 +72,10 @@ pub struct DaemonConfig {
     pub agent_token: Option<String>,
     /// Register-only token for browser-extension peers (gateway).
     pub extension_token: Option<String>,
+    /// Optional LAN CIDR allow-list (Tailscale CGNAT / 192.168.x SD-WAN
+    /// sites). Empty = any reachable peer (token-gated). Peer-source
+    /// checks consult this when non-empty. Never hard-coded.
+    pub lan_cidrs: Vec<crate::cidr::Cidr4>,
 }
 
 impl DaemonConfig {
@@ -92,6 +96,7 @@ impl DaemonConfig {
             gateway_mode: false,
             agent_token: None,
             extension_token: None,
+            lan_cidrs: Vec::new(),
         }
     }
 
@@ -112,9 +117,25 @@ impl DaemonConfig {
 
 impl From<&StartArgs> for DaemonConfig {
     fn from(args: &StartArgs) -> Self {
+        let lan_cidrs = args.resolved_lan_cidrs();
+        // Gateway mode with no explicit --listen: auto-probe a
+        // LAN/Tailscale interface (P2#6). Non-gateway keeps the
+        // explicit value / loopback default.
+        let listen_ip = if args.gateway && args.listen.is_none() {
+            crate::netdev::probe_gateway_listen(&lan_cidrs)
+                .unwrap_or_else(|| {
+                    tracing::warn!(
+                        "--gateway: no suitable LAN/Tailscale interface found; \
+                         falling back to loopback"
+                    );
+                    args.resolved_listen()
+                })
+        } else {
+            args.resolved_listen()
+        };
         Self {
             ws_port: args.resolved_port(),
-            listen_ip: args.resolved_listen(),
+            listen_ip,
             agent_port: args.agent_port,
             session_idle: args.resolved_session_idle(),
             daemon_idle: args.resolved_daemon_idle(),
@@ -125,6 +146,7 @@ impl From<&StartArgs> for DaemonConfig {
             gateway_mode: args.gateway,
             agent_token: args.agent_token.clone(),
             extension_token: args.extension_token.clone(),
+            lan_cidrs,
         }
     }
 }
@@ -308,7 +330,8 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
             sock_path.clone(),
             ws_port,
             env!("CARGO_PKG_VERSION"),
-        );
+        )
+        .with_gateway_mode(cfg.gateway_mode);
         daemon_info::write(&info).context("write daemon.json")?;
         info!(
             pid = info.pid,
@@ -424,6 +447,7 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
                     tcp_listener,
                     handler,
                     cfg.agent_token.clone(),
+                    cfg.lan_cidrs.clone(),
                     ipc_open,
                     ipc_activity,
                     ipc_close,
@@ -790,6 +814,7 @@ fn restart_start_args(cfg: &DaemonConfig) -> StartArgs {
         gateway: cfg.gateway_mode,
         agent_token: cfg.agent_token.clone(),
         extension_token: cfg.extension_token.clone(),
+        lan_cidr: cfg.lan_cidrs.iter().map(|c| c.to_string()).collect(),
         foreground: false,
         session_idle: Some(cfg.session_idle),
         daemon_idle: cfg.daemon_idle,
@@ -1107,6 +1132,25 @@ fn validate_existing_start(args: &StartArgs, status: &StatusResult) -> Result<()
         return Err(anyhow::anyhow!(
             "daemon already running; use `bsk daemon restart` to apply idle timeout changes"
         ));
+    }
+    // F4 (P2 audit): a running daemon may have different gateway mode
+    // or LAN scoping than the args being (re)issued. Surface it instead
+    // of silently accepting and letting the operator think the new CIDR
+    // restriction is already live.
+    if let Some(info) = daemon_info::read_valid()? {
+        let gw_mismatch = args.gateway != info.gateway_mode;
+        // lan_cidrs are not persisted on DaemonInfo; treat any explicit
+        // --lan-cidr / BSK_LAN_CIDRS as a request that must restart to
+        // take effect.
+        let has_lan_args = !args.lan_cidr.is_empty()
+            || std::env::var("BSK_LAN_CIDRS").map_or(false, |v| !v.trim().is_empty());
+        if gw_mismatch || has_lan_args {
+            warn!(
+                gateway_mismatch = gw_mismatch,
+                lan_restriction_requested = has_lan_args,
+                "daemon already running; new --gateway/--lan-cidr values will NOT apply until restart"
+            );
+        }
     }
     Ok(())
 }

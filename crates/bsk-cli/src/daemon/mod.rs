@@ -64,8 +64,13 @@ pub async fn run(
             };
             let handler = ipc::full_handler(status, Arc::clone(&state));
             Some(
-                ipc::tcp::bind_server(tcp_addr, handler, state.config.agent_token.clone())
-                    .await?,
+                ipc::tcp::bind_server(
+                    tcp_addr,
+                    handler,
+                    state.config.agent_token.clone(),
+                    state.config.lan_cidrs.clone(),
+                )
+                .await?,
             )
         }
         None => None,

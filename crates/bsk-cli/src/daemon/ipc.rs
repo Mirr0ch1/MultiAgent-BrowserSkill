@@ -1520,10 +1520,16 @@ pub(crate) mod tcp {
     /// authenticate with a first-frame `system.handshake` carrying that
     /// token. `None` refuses all connections (no token configured means
     /// no remote peers — this transport is network-exposed by design).
+    ///
+    /// `lan_cidrs` (when non-empty) restricts peers to source addresses
+    /// inside the configured LAN networks (Tailscale / 192.168.x SD-WAN
+    /// sites); others are dropped before any handshake work (P2 audit
+    /// fix — LAN scoping as configured, never hard-coded).
     pub async fn serve<S>(
         listener: TcpListener,
         handler: RpcHandler,
         expected_agent_token: Option<String>,
+        lan_cidrs: Vec<crate::cidr::Cidr4>,
         on_open: impl Fn() + Send + Sync + 'static,
         on_activity: impl Fn() + Send + Sync + 'static,
         on_close: impl Fn() + Send + Sync + 'static,
@@ -1545,6 +1551,18 @@ pub(crate) mod tcp {
                 accepted = listener.accept() => {
                     match accepted {
                         Ok((stream, peer)) => {
+                            // LAN scope gate (P2): drop peers outside the
+                            // configured CIDRs before any handshake work.
+                            if !lan_cidrs.is_empty()
+                                && !peer_allowed(&lan_cidrs, &peer)
+                            {
+                                warn!(
+                                    %peer,
+                                    "tcp ipc connection rejected: peer outside configured LAN CIDRs"
+                                );
+                                drop(stream);
+                                continue;
+                            }
                             on_open();
                             let handler = handler.clone();
                             let on_act = on_activity.clone();
@@ -1567,12 +1585,23 @@ pub(crate) mod tcp {
         }
     }
 
+    fn peer_allowed(lan_cidrs: &[crate::cidr::Cidr4], peer: &SocketAddr) -> bool {
+        // Loopback / mapped-V4 / LAN CIDR handled centrally in cidr.rs.
+        crate::cidr::ip_allowed(lan_cidrs, peer.ip())
+    }
+
     async fn handle_connection(
         stream: TcpStream,
         handler: RpcHandler,
         expected_token: Option<String>,
         on_activity: Arc<dyn Fn() + Send + Sync>,
     ) -> Result<()> {
+        // Capture the peer address before `into_split` consumes the
+        // socket; used for auth-failure audit logging (P2#3).
+        let peer = stream
+            .peer_addr()
+            .map(|a| a.to_string())
+            .unwrap_or_else(|_| "unknown".into());
         let (read_half, mut write_half) = stream.into_split();
         let mut reader = BufReader::new(read_half);
         let mut line = String::new();
@@ -1626,16 +1655,25 @@ pub(crate) mod tcp {
                                     },
                                 ))?
                             }
-                            Err((id, msg)) => serde_json::to_string(&Frame::Response(
-                                bsk_protocol::ResponseFrame {
-                                    id,
-                                    body: ResponseBody::Err(RpcError {
-                                        code: ErrorCode::ProtocolError,
-                                        message: msg,
-                                        data: None,
-                                    }),
-                                },
-                            ))?,
+                            Err((id, msg)) => {
+                                // P2#3: surface auth failures with the
+                                // peer address (LAN brute-force audit).
+                                warn!(
+                                    peer = %peer,
+                                    reason = %msg,
+                                    "tcp ipc handshake rejected"
+                                );
+                                serde_json::to_string(&Frame::Response(
+                                    bsk_protocol::ResponseFrame {
+                                        id,
+                                        body: ResponseBody::Err(RpcError {
+                                            code: ErrorCode::ProtocolError,
+                                            message: msg,
+                                            data: None,
+                                        }),
+                                    },
+                                ))?
+                            }
                         }
                     } else {
                         let body = (handler)(id.clone(), method, params).await;
@@ -1716,6 +1754,7 @@ pub(crate) mod tcp {
         addr: SocketAddr,
         handler: RpcHandler,
         expected_token: Option<String>,
+        lan_cidrs: Vec<crate::cidr::Cidr4>,
     ) -> Result<TcpIpcHandle> {
         let listener = bind(addr).await?;
         // If `addr` used port 0 (tests), capture the OS-assigned port so
@@ -1727,6 +1766,7 @@ pub(crate) mod tcp {
             listener,
             handler,
             expected_token,
+            lan_cidrs,
             || {},
             || {},
             || {},

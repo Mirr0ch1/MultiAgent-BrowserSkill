@@ -355,6 +355,18 @@ fn install_candidate_with_client(
     restart_daemon: bool,
     client: &reqwest::blocking::Client,
 ) -> Result<InstallAction> {
+    // P2#7: never replace a gateway daemon binary via `bsk update`.
+    // The fork gateway carries token/auth config that an upstream
+    // Release would silently wipe; only the fork's own release
+    // pipeline may update it.
+    if let Some(info) = crate::daemon::info::read_valid()? {
+        if info.gateway_mode {
+            return Err(anyhow::anyhow!(
+                "refusing to update a gateway-mode daemon (daemon.json gateway_mode=true); \
+                 apply fork-specific updates only, and manage the gateway on its host"
+            ));
+        }
+    }
     let binary = download_candidate_binary(candidate, client)?;
     let target = std::env::current_exe().context("locate current bsk executable")?;
 

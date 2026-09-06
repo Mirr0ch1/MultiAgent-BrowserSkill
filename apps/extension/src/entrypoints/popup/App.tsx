@@ -51,6 +51,8 @@ export function App() {
   const [daemonUrlDraft, setDaemonUrlDraft] = useState("");
   const [extensionTokenDraft, setExtensionTokenDraft] = useState("");
   const [settingsSaved, setSettingsSaved] = useState(false);
+  // P2#9: true when the daemon URL fails ws:// / wss:// validation.
+  const [urlError, setUrlError] = useState(false);
   // Bumped on every successful copy so the "copied" toast re-shows (and its
   // auto-hide timer restarts) even when the copied content is unchanged.
   const [copiedTick, setCopiedTick] = useState(0);
@@ -90,7 +92,15 @@ export function App() {
   }, []);
 
   const saveConnectionSettings = () => {
-    setDaemonUrl(daemonUrlDraft.trim());
+    const url = daemonUrlDraft.trim();
+    // P2#9: reject a bare host / garbage daemon URL with an inline
+    // hint instead of silently persisting an unusable value.
+    if (!/^wss?:\/\//i.test(url)) {
+      setUrlError(true);
+      return;
+    }
+    setUrlError(false);
+    setDaemonUrl(url);
     setExtensionToken(extensionTokenDraft.trim());
     setSettingsSaved(true);
     window.setTimeout(() => setSettingsSaved(false), 1500);
@@ -461,13 +471,22 @@ export function App() {
               id="bh-connection-url"
               type="text"
               value={daemonUrlDraft}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                setDaemonUrlDraft(event.target.value)
-              }
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                setDaemonUrlDraft(event.target.value);
+                if (urlError) setUrlError(false);
+              }}
               placeholder={t("popup.connection.daemonUrlPlaceholder")}
               className="mt-0 h-8 text-sm"
               data-slot="popup-connection-daemon-input"
             />
+            {urlError && (
+              <p
+                className="text-[10px] text-destructive"
+                data-slot="popup-connection-url-error"
+              >
+                {t("popup.connection.urlError")}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1.5" data-slot="popup-connection-token-field">
             <Label htmlFor="bh-connection-token" className="block text-xs text-muted-foreground">
@@ -475,7 +494,7 @@ export function App() {
             </Label>
             <Input
               id="bh-connection-token"
-              type="text"
+              type="password"
               value={extensionTokenDraft}
               onChange={(event: ChangeEvent<HTMLInputElement>) =>
                 setExtensionTokenDraft(event.target.value)

@@ -100,11 +100,11 @@ fork 腾讯 BrowserSkill，把 bsk daemon 改造成**局域网网关/broker（�
 - [x] **M2 完成（e1fac0d，12 个新集成测试全绿）**：测试入口 daemon::run 支持 TCP IPC + token（TcpIpcHandle/bind_server/DaemonHandle.tcp）；gateway_tcp_auth（3）/ gateway_ws_token（4）/ gateway_busy（2）/ gateway_runtime_guards（3）——TCP 认证、WS 扩展 token、跨 agent Busy、互锁、远程 auto-spawn 短路全覆盖
 - [x] **M3 完成（5c1ffcb，扩展侧 15 文件）**：popup 可配 daemon 地址 + 扩展 token——daemon-config 存储层、握手协议 1.2 + HandshakeParams.token、WSTransport.reconfigure 运行时换地址、ConnectionController.replaceTransport/setExtensionToken、background 启动读配置 + popup set_daemon_url/set_extension_token 消息、popup connection 设置视图 + i18n（en/zh）；扩展测试 846 全绿
 - [x] **M4 完成（skill 网关形态，码仓外）**：`~/.openclaw/skills/browser-login/SKILL.md` 与 `browser-auto/SKILL.md` 同步——browser-login 移除 Bash(ssh:*) 与已否的 SSH 接入段，改写为网关直连形态（`bsk --host <ip> --port <port> --agent-token <token>` 全局 flag + BSK_AGENT_TOKEN 环境变量；远程模式不 auto-spawn；先 `bsk browsers` 列注册浏览器、多台询问用户；带 `--agent-id` 保 Busy 语义）；browser-auto 路由引用同步网关描述
+- [x] **P0/P1 修复完成（b05a1db，25 文件 +349/-218）**：AnyClient（Local IpcClient / Remote TcpClient 统一）+ Endpoint/resolve_endpoint；business_rpc::call/call_async/send_cancel 改 &Endpoint；23 个 CLI 子命令全切 AnyClient；detached 透传 token；互锁分列（extension_token 护 WS / agent_token 护 TCP IPC）；实测远程 `bsk --host … browsers` exit=0
+- [x] **二次审计（GLM-5.3）→ 报告 `AUDIT-FIX-P0P1-GLM53.md`** 通过，无误报
+- [x] **P2 全修 + 局域网段配置完成（17 文件 +285/-23，待 commit）**：`cidr.rs`（IPv4 CIDR 零依赖匹配，11 单测）+ `netdev.rs`（gateway 自动选监听，tailscale0 优先）+ `--lan-cidr` 可重复 flag / `BSK_LAN_CIDRS` env + TCP IPC/WS 对端源 IP 门（ip_allowed：空列表=不限制、loopback 127.0.0.1+::1 放行、IPv4-mapped 解映射）；P2#1 admin 远程拒绝 + doctor 远程分支；P2#3 认证失败 warn+peer；P2#4 App.test stub（846 全绿 exit 0）；P2#7 update 网关 guard；P2#8 删误导文案；P2#9 popup URL 校验 + token password + i18n；P2#2 skill 披露 Busy 非隔离
+- [x] **P2+LAN 审计（GLM-5.3）→ `AUDIT-P2LAN-GLM53.md`**：主线全接通安全方向正确（cargo 7 + pnpm 846）；检出 F1（P1 Windows 构建破坏：if-addrs 放 unix-only deps 但 netdev 无条件引用 → 移入公共 [dependencies]）+ F2（::1 被拒 → ip_allowed 放行）+ F3（IPv4-mapped 拒绝 → 解映射）+ F4（已运行 daemon CIDR 漂移静默 → warn）+ F5（非法 CIDR 静默塌缩 → warn）+ N1/N2 记录在案；修复后 cargo 286 lib 全绿 + 集成全绿，扩展 846 全绿
 - [ ] M5 跨机 soak + 防火墙/systemd/回滚文档 + Windows 真机
-- [ ] M2 Busy/一致性测试
-- [ ] M3 扩展 UI
-- [ ] M4 skill 网关形态
-- [ ] M5 跨机 soak + 文档 + Windows 真机
 
 ## 9. 相关文件索引
 

@@ -52,8 +52,18 @@ pub struct StartArgs {
     #[arg(long)]
     pub gateway: bool,
 
+    /// Extra LAN CIDR allow-listed for gateway peers (repeatable,
+    /// comma-separated, or `BSK_LAN_CIDRS` env). Examples:
+    /// `100.64.0.0/10` (Tailscale CGNAT), `192.168.10.0/24`,
+    /// `192.168.30.0/24`, `192.168.50.0/24` (SD-WAN sites). Unset =
+    /// any reachable peer (token-gated). Also consulted by the
+    /// gateway auto-listen probe to prefer an interface inside these
+    /// networks. Never hard-coded — operator-configured.
+    #[arg(long, value_name = "CIDR", action = clap::ArgAction::Append)]
+    pub lan_cidr: Vec<String>,
+
     /// Gateway agent token (full privilege, CLI peers). Required for
-    /// non-loopback binds. Also accept `--token` as shorthand.
+    /// non-loopback binds.
     #[arg(long, value_name = "TOKEN")]
     pub agent_token: Option<String>,
 
@@ -81,6 +91,33 @@ impl StartArgs {
 
     pub fn resolved_listen(&self) -> IpAddr {
         self.listen.unwrap_or(DEFAULT_WS_LISTEN)
+    }
+
+    /// Resolve the LAN CIDR allow-list: `--lan-cidr` flags, then
+    /// `BSK_LAN_CIDRS` env (comma-separated), then empty (unrestricted).
+    ///
+    /// F5 (P2 audit): if CIDRs were *explicitly* requested but none
+    /// parsed (typo, malformed), warn loudly instead of silently
+    /// collapsing to an unrestricted allow-list.
+    pub fn resolved_lan_cidrs(&self) -> Vec<crate::cidr::Cidr4> {
+        let mut raw: Vec<String> = self.lan_cidr.clone();
+        if let Ok(env) = std::env::var("BSK_LAN_CIDRS") {
+            if !env.trim().is_empty() {
+                raw.push(env);
+            }
+        }
+        let explicit = !raw.is_empty();
+        let parsed: Vec<crate::cidr::Cidr4> = raw
+            .iter()
+            .flat_map(|s| crate::cidr::parse_list(s))
+            .collect();
+        if explicit && parsed.is_empty() {
+            tracing::warn!(
+                raw = ?raw,
+                "--lan-cidr/BSK_LAN_CIDRS provided but none parsed; LAN allow-list is EMPTY (unrestricted) — check CIDR syntax"
+            );
+        }
+        parsed
     }
 
     pub fn resolved_session_idle(&self) -> Duration {

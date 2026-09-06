@@ -27,6 +27,11 @@ pub struct DaemonInfo {
     /// `SystemTime` rendered as RFC 3339-ish seconds-since-epoch for
     /// portability across platforms.
     pub started_at_epoch_secs: u64,
+    /// True when the daemon was started with `--gateway` (P2#7).
+    /// Old daemon.json files predate this field; `serde(default)` keeps
+    /// them readable as a non-gateway daemon.
+    #[serde(default)]
+    pub gateway_mode: bool,
 }
 
 impl DaemonInfo {
@@ -40,7 +45,13 @@ impl DaemonInfo {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
+            gateway_mode: false,
         }
+    }
+
+    pub fn with_gateway_mode(mut self, gateway: bool) -> Self {
+        self.gateway_mode = gateway;
+        self
     }
 }
 

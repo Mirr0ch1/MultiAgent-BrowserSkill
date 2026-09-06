@@ -42,7 +42,19 @@ fn main() -> ExitCode {
 
 fn dispatch(cli: Cli, format: Format) -> Result<(), CliError> {
     match cli.command {
-        Command::Daemon(cmd) => cli::daemon::dispatch(cmd).map_err(CliError::Local),
+        Command::Daemon(cmd) => {
+            // P2#1: admin commands have no remote semantics. In remote
+            // gateway mode the daemon lives on the gateway host — running
+            // `bsk --host … daemon start` locally would silently spawn a
+            // loopback daemon and mislead. Refuse loudly instead.
+            if cli.flags.is_remote() {
+                return Err(CliError::Local(anyhow::anyhow!(
+                    "remote gateway mode: `bsk --host … daemon …` is not supported; \
+                     the gateway daemon runs on the gateway host and is managed there"
+                )));
+            }
+            cli::daemon::dispatch(cmd).map_err(CliError::Local)
+        }
         Command::Status => {
             let output = if cli.flags.json {
                 Output::Json

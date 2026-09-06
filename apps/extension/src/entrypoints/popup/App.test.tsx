@@ -10,6 +10,15 @@ vi.mock("./use-connection-state", () => ({
   useConnectionState: vi.fn(),
 }));
 
+// M3 added a mount-time `useEffect` that reads daemon settings from
+// chrome.storage (P2 audit: without this the describe("App") block
+// triggered 12 unhandled chrome.storage errors and vitest exited 1).
+// Mock the config module so the effect resolves without a chrome global.
+vi.mock("@/lib/daemon-config", () => ({
+  getDaemonWsUrl: vi.fn(async () => "ws://127.0.0.1:52800"),
+  getExtensionToken: vi.fn(async () => ""),
+}));
+
 const mockUseConnectionState = vi.mocked(useConnectionState);
 
 /** Arbitrary peer fixture — only used to distinguish daemon vs extension in the UI. */

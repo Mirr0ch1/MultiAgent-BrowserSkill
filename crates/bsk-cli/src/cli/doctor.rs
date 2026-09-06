@@ -101,8 +101,46 @@ impl CheckResult {
 }
 
 pub fn run(output: Output) -> Result<Vec<CheckResult>> {
+    // P2#1: in remote-gateway mode `doctor` must diagnose the *gateway*
+    // (via --host/--port/--agent-token), not the local daemon.
+    if crate::cli::global_flags().is_remote() {
+        return run_remote(output);
+    }
     let state = resolve_daemon_state(output);
     let checks = collect_checks(state);
+    match output {
+        Output::Human => render_human(&checks),
+        Output::Json => render_json(&checks)?,
+    }
+    Ok(checks)
+}
+
+/// Remote-gateway doctor: probe `--host:--port` with the agent token
+/// and report connectivity + protocol/extension status from the remote
+/// daemon's `system.status`. Local-only checks (home writable, skill
+/// sync) are skipped — they say something about this agent host, not
+/// the gateway.
+fn run_remote(output: Output) -> Result<Vec<CheckResult>> {
+    let endpoint = crate::cli::ensure_daemon::resolve_endpoint();
+    let checks = match endpoint {
+        Ok(endpoint) => {
+            let status = status::query_sock_with_wait(&endpoint, Duration::ZERO);
+            vec![
+                CheckResult::ok(
+                    "gateway reachable",
+                    format!("connected to gateway at {endpoint:?}"),
+                ),
+                check_version_compatible(status.as_ref().ok()),
+                check_extension_connected(status.as_ref().ok()),
+                check_browsers_protocol_compatible(status.as_ref().ok()),
+            ]
+        }
+        Err(err) => vec![CheckResult::fail(
+            "gateway reachability",
+            format!("could not resolve gateway endpoint: {err:#}"),
+            "check --host/--port/--agent-token (or BSK_AGENT_TOKEN)",
+        )],
+    };
     match output {
         Output::Human => render_human(&checks),
         Output::Json => render_json(&checks)?,

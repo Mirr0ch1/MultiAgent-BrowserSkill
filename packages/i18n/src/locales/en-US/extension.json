@@ -67,7 +67,8 @@
       "extensionTokenPlaceholder": "Optional, for token-enforcing gateways",
       "save": "Save",
       "saved": "Saved",
-      "saveHint": "Changes reconnect to the new daemon"
+      "saveHint": "Changes reconnect to the new daemon",
+      "urlError": "Daemon address must start with ws:// or wss://"
     }
   },
   "controlOverlay": {

@@ -90,6 +90,7 @@ pub struct WsHandle {
 
 async fn run_accept_loop(state: Arc<DaemonState>, listener: TcpListener, shutdown: Arc<Notify>) {
     info!(addr = %listener.local_addr().unwrap(), "ws server listening");
+    let lan_cidrs = state.config.lan_cidrs.clone();
     loop {
         tokio::select! {
             _ = shutdown.notified() => {
@@ -99,6 +100,19 @@ async fn run_accept_loop(state: Arc<DaemonState>, listener: TcpListener, shutdow
             accept = listener.accept() => {
                 match accept {
                     Ok((stream, peer)) => {
+                        // LAN scope gate (P2): drop extension peers outside
+                        // the configured CIDRs before any handshake work.
+                        // Loopback (same-host) is always allowed; mapped
+                        // V4 and LAN CIDRs handled centrally in cidr.rs.
+                        let peer_ok = crate::cidr::ip_allowed(&lan_cidrs, peer.ip());
+                        if !peer_ok {
+                            warn!(
+                                %peer,
+                                "ws connection rejected: peer outside configured LAN CIDRs"
+                            );
+                            drop(stream);
+                            continue;
+                        }
                         let state = Arc::clone(&state);
                         tokio::spawn(async move {
                             if let Err(err) = handle_connection(state, stream, peer).await {
