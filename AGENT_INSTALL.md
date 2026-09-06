@@ -1,26 +1,26 @@
-# browser-skill — Install Guide for AI Agents
+# MultiAgent-BrowserSkill — Install Guide for AI Agents
 
-You are an AI agent setting up browser-skill for the user. Done = `bsk doctor`
-reports every check `ok` (or `na`). Never use `sudo`; you cannot install the
-extension yourself (Step 3 is the user's job).
+You are an AI agent setting up MultiAgent-BrowserSkill for the user. Done =
+`bsk doctor` reports every check `ok` (or `na`). Never use `sudo`; you cannot
+install the extension yourself (Step 3 is the user's job).
 
-## 1. Install the CLI and skill
+This fork is **not** distributed via the Chrome Web Store / Edge Add-ons, and
+does not ship prebuilt release binaries yet — install from source.
 
-Run the install command from [`README.md`](README.md):
+## 1. Build the CLI and install the skill
 
-**macOS / Linux:**
+Requires Rust (Cargo) ≥ 1.98.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Tencent/BrowserSkill/main/install.sh | sh
+git clone https://github.com/Mirr0ch1/MultiAgent-BrowserSkill.git
+cd MultiAgent-BrowserSkill
+cargo build --release -p bsk
+export PATH="$PWD/target/release:$PATH"
 bsk install-skill --yes
 ```
 
-**Windows (PowerShell):**
-
-```powershell
-irm https://raw.githubusercontent.com/Tencent/BrowserSkill/main/install.ps1 | iex
-bsk install-skill --yes
-```
+On Windows, add `target\release` to `PATH` and run the same commands in a
+terminal with Rust installed.
 
 ## 2. Run `bsk doctor`
 
@@ -31,20 +31,29 @@ bsk doctor
 Each `fail` row prints a `hint` — follow it and re-run once. A fresh install
 where only `extension connected` fails is expected; go to Step 3.
 
-## 3. Open the extension install page
+## 3. Load the browser extension
 
 If `extension connected` is `FAIL` (`0 browsers connected`), the user likely
-has not installed or enabled the browser extension yet. Open the install page
-matching the user's browser —
-[Chrome Web Store](https://chromewebstore.google.com/detail/hhcmgoofomhgciiibhipgmgkgnoenaoi)
-for Chrome and other Chromium browsers,
-[Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/browserskill/emacgiaaaiojkkpkddmmdfhmokgmnikg)
-for Microsoft Edge — then tell the user:
+has not loaded the browser extension yet. Build it first (requires Node.js +
+pnpm):
 
-> Install **BrowserSkill** from the
-> [Chrome Web Store](https://chromewebstore.google.com/detail/hhcmgoofomhgciiibhipgmgkgnoenaoi)
-> (or [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/browserskill/emacgiaaaiojkkpkddmmdfhmokgmnikg)
-> on Edge), open the popup, and wait until it turns green. Reply when done.
+```bash
+cd apps/extension
+pnpm install
+pnpm build
+```
 
-If opening the page fails, give the user the same link. Then run `bsk doctor`
-once more. All `ok`/`na` → tell the user it's ready.
+Then ask the user to:
+
+> Open `chrome://extensions` (or `edge://extensions`), enable **Developer
+> mode**, click **Load unpacked**, and select
+> `apps/extension/.output/chrome-mv3` in the repo. Open the popup and wait
+> until it turns green. Reply when done.
+
+Then run `bsk doctor` once more. All `ok`/`na` → tell the user it's ready.
+
+## Gateway mode (multi-agent, multi-host)
+
+See the **Gateway mode** section in [`README.md`](README.md) for starting the
+daemon with `--gateway`, `--lan-cidr`, `--agent-token` / `--extension-token`,
+and connecting remote agents via `bsk --host … --port … --agent-token …`.

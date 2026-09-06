@@ -1,215 +1,264 @@
-# BrowserSkill
+# MultiAgent-BrowserSkill
 
 <p align="center">
-  <img src="docs/assets/browserskill-readme-banner.png" alt="BrowserSkill banner" />
+  <img src="docs/assets/browserskill-readme-banner.png" alt="MultiAgent-BrowserSkill banner" />
 </p>
 
 <p align="center">
-  <strong>Let AI agents use your browser without interrupting your work.</strong>
+  <strong>Let many AI agents drive your browsers over the LAN — without interrupting your work.</strong>
 </p>
 
 <p align="center">
   English · <a href="README.zh-CN.md">中文</a>
 </p>
 
-**BrowserSkill** connects Cursor, Claude Code, Codex, OpenClaw, CodeBuddy,
-WorkBuddy, Pi, Hermes Agent, DeepSeek Harness, and other AI agents to your already logged-in
-browser.
+**MultiAgent-BrowserSkill** is a gateway-shaped fork of
+[Tencent/BrowserSkill](https://github.com/Tencent/BrowserSkill) (MIT). It turns
+the local bridge between AI agents and your browser into a **LAN gateway /
+broker**: multiple agents on multiple machines can share multiple browsers
+across hosts — while still fully supporting the original single-machine mode.
+
+Agents connect to a gateway daemon over authenticated TCP IPC; browser
+extensions on any host dial back to the same daemon over authenticated
+WebSocket. No SSH, no credentials stored on the gateway host, no lock-in to a
+specific agent framework.
 
 Need the agent to touch a tab you already have open? It must borrow that tab
 explicitly, return it when the task is done, and leave the rest of your browser
 alone.
 
-https://github.com/user-attachments/assets/db782c92-b1d4-4aae-a255-039675937a90
+## What's new in this fork
 
-## BrowserSkill Advantages
+| Capability | Description |
+| --- | --- |
+| **Multi-agent × multi-browser gateway** | One daemon on a LAN host; remote CLI peers (agents) connect over TCP IPC, browser extensions register over outbound WebSocket. Many-to-many, no SSH. |
+| **Token authentication** | Two token roles: `--agent-token` (full control for remote CLIs) and `--extension-token` (register-only for browser extensions). Tokens are exchanged in the first handshake frame — never in the URL / query string. |
+| **Protocol 1.2** | Handshake carries `agent_id` + token; Busy semantics and session ownership are part of the wire protocol, with `MIN_COMPATIBLE_PROTOCOL = 1.0` for graceful upgrades. |
+| **LAN CIDR allow-list** | Optional `--lan-cidr` (repeatable) / `BSK_LAN_CIDRS` env scopes which source networks may talk to the daemon at all. Peer source-IP is checked **before** any handshake on both TCP and WebSocket entry points. Nothing hard-coded; operators configure their own networks (Tailscale CGNAT `100.64.0.0/10`, home `192.168.x.0/24`, …). |
+| **Gateway auto-listen** | `bsk daemon start --gateway` without `--listen` probes the host's interfaces and picks a LAN-reachable address — Tailscale interface first, then a network inside the configured CIDRs, then any non-loopback, with loopback as safe fallback. |
+| **Busy semantics + session ownership** | A session records the owning `agent_id`; another agent hitting the same browser gets `session_busy` instead of silently hijacking. `--share` is the explicit override. Same agent is allowed concurrent sessions. |
+| **Safety interlocks** | Non-loopback binds *require* a configured token (daemon refuses to start otherwise); gateway mode disables idle self-shutdown, auto-spawn and auto-update. `::1` loopback and IPv4-mapped IPv6 peers are handled correctly in the CIDR gate. |
+| **Remote CLI** | `bsk --host <ip> --port <port> --agent-token <token> …` (or `BSK_AGENT_TOKEN` env). Remote mode never auto-spawns a local daemon; admin commands (`daemon start/stop/restart`) are refused remotely — gateway lifecycle belongs to the gateway host. |
+| **Configurable extension endpoints** | The popup can set the daemon address + extension token (`ws://` validation, token field masked), reconnect at runtime without reloading the extension. |
+
+The original single-machine experience is unchanged: `bsk daemon start` binds
+loopback by default, same-host CLI via local IPC, local extension via `ws://127.0.0.1`.
+
+## BrowserSkill Advantages (inherited)
 
 - **Reuse real login state**: Agents can work with sites you are already signed
   into, without separate test accounts.
 - **Keep working uninterrupted**: browser tasks run in a separate, visible
   Agent Window, so you can keep using your own browser.
-- **Support any Agent**: any Agent that can call a shell can use BrowserSkill
-  through the `bsk` CLI, with no lock-in to a specific model, Agent framework, or
-  harness.
+- **Support any Agent**: any Agent that can call a shell can use it through the
+  `bsk` CLI, with no lock-in to a specific model, Agent framework, or harness.
 - **Built-in human-in-loop**: when a task hits captcha, login, confirmation
   dialogs, or other human-only steps, the Agent can ask you to take over and
   then continue afterwards.
 
 ## Runtime Environment
 
-BrowserSkill has two local runtime pieces: the `bsk` CLI/daemon and the browser
-extension.
+Two runtime pieces: the `bsk` CLI/daemon (the gateway) and the browser extension.
 
 | Runtime | Support |
 | --- | --- |
 | Operating systems | macOS (Apple Silicon and Intel), Linux (x64 and ARM64), Windows x64 |
 | Browsers | Chrome and Microsoft Edge are supported; other Chromium-based browsers are expected to work when they support unpacked Chromium extensions; Firefox is planned |
 
-## Quick Start
+## Multi-agent Gateway Architecture
 
-<details open>
-<summary><b>Install with your Agent (recommended)</b></summary>
+```mermaid
+flowchart TB
+  subgraph Agents["Agents (any machines, LAN)"]
+    AgentA["Agent A (this machine)"] 
+    AgentB["Agent B (remote, --host …)"]
+    AgentC["Agent C (remote, --host …)"]
+  end
 
-<br>
+  subgraph Gateway["Gateway Host (LAN)"]
+    Daemon["bsk daemon (gateway mode)"]
+  end
 
-Already using Cursor, Claude Code, Codex, or another shell-capable agent? Just
-copy this one line and send it to your agent — it will install the CLI and skill
-for you, then walk you through loading the extension:
+  subgraph BrowserHosts["Browser Hosts (LAN)"]
+    Ext1["Extension #1 (this machine)"]
+    Ext2["Extension #2 (remote machine)"]
+    W1["Browser profile — Agent Window"]
+    W2["Browser profile — Agent Window"]
+  end
 
-```text
-Set up browser-skill on this machine by following https://raw.githubusercontent.com/Tencent/BrowserSkill/main/AGENT_INSTALL.md
+  AgentA -->|"local IPC"| Daemon
+  AgentB -->|"TCP IPC + agent-token"| Daemon
+  AgentC -->|"TCP IPC + agent-token"| Daemon
+  Daemon -->|"WebSocket + extension-token"| Ext1
+  Daemon -->|"WebSocket + extension-token"| Ext2
+  Ext1 -->|"automates"| W1
+  Ext2 -->|"automates"| W2
 ```
 
-</details>
+- The agent never talks to the browser directly. It asks the `bsk` CLI to perform
+  a browser task; the gateway daemon routes the request to a registered browser
+  extension; the extension runs it in an Agent Window.
+- Extensions **dial out** to the daemon (no inbound firewall holes on browser
+  hosts); remote agents dial the daemon's TCP IPC port (one port per gateway).
+- The gateway host holds **no browser-host credentials** — token exchange happens
+  at connection time, in the handshake frame.
 
-<details>
-<summary><b>Manual install</b></summary>
+## Security Model
 
-<br>
+- **Tokens never appear in URLs** — sent in the first handshake frame over TCP
+  and WebSocket.
+- **Two roles**: `agent_token` = full control (remote CLI), `extension_token` =
+  register-only (browser extension).
+- **Interlock**: binding a non-loopback address without the matching token is a
+  startup error, not a warning. Gateway mode additionally disables idle
+  self-shutdown, daemon auto-spawn and auto-update.
+- **Optional LAN CIDR allow-list**: when configured, peers whose source IP is
+  outside the list are dropped before handshake (both TCP and WebSocket entry
+  points). Loopback (`127.0.0.1`, `::1`) is always allowed; IPv4-mapped IPv6
+  peers are unmapped and matched as IPv4.
+- **Honest defaults**: as a convention, Busy/session-ownership relies on
+  agents sending a truthful `--agent-id`. For strong isolation across trust
+  domains, issue a separate token per trust domain — do not share one
+  agent-token across domains.
 
-Install the CLI, then install the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/hhcmgoofomhgciiibhipgmgkgnoenaoi)
-or [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/browserskill/emacgiaaaiojkkpkddmmdfhmokgmnikg).
+## Quick Start (build from source)
 
-#### 1. Install the `bsk` CLI
+> This fork is not distributed via the Chrome Web Store; load the extension as
+> an unpacked extension from `apps/extension` builds.
 
-**macOS / Linux** (recommended — installs to `~/.local/bin`):
+#### 1. Build the `bsk` CLI
+
+Requires Rust (Cargo) ≥ 1.98.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Tencent/BrowserSkill/main/install.sh | sh
-```
-
-**Windows** (PowerShell — installs to `~/.local/bin`):
-
-```powershell
-irm https://raw.githubusercontent.com/Tencent/BrowserSkill/main/install.ps1 | iex
-```
-
-Verify the binary:
-
-```bash
+git clone https://github.com/Mirr0ch1/MultiAgent-BrowserSkill.git
+cd MultiAgent-BrowserSkill
+cargo build --release -p bsk
+# binary at target/release/bsk — add target/release to your PATH
 bsk --version
 ```
 
-#### 2. Install the browser extension
+#### 2. Build & load the browser extension
 
-Install BrowserSkill from your browser's store:
+Requires Node.js + pnpm.
 
-| Browser | Store listing |
-| --- | --- |
-| Chrome | [Chrome Web Store](https://chromewebstore.google.com/detail/hhcmgoofomhgciiibhipgmgkgnoenaoi) |
-| Microsoft Edge | [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/browserskill/emacgiaaaiojkkpkddmmdfhmokgmnikg) |
+```bash
+cd apps/extension
+pnpm install
+pnpm build
+```
 
-On other Chromium-based browsers, install the Chrome Web Store build.
+Then open `chrome://extensions` (or `edge://extensions`), enable **Developer
+mode**, choose **Load unpacked**, and select `apps/extension/.output/chrome-mv3`.
 
-#### 3. Install the skill
-
-BrowserSkill ships a skill that teaches your agent harness how to use `bsk`. For
-these harnesses, install it in one step:
-
-<p align="center">
-<table>
-  <tr>
-    <td align="center" width="108"><a href="https://cursor.com" title="Cursor"><img src="docs/assets/harnesses/cursor.svg" height="36" alt="Cursor" /></a><br /><sub><b>Cursor</b></sub></td>
-    <td align="center" width="108"><a href="https://docs.anthropic.com/en/docs/claude-code" title="Claude Code"><img src="docs/assets/harnesses/claude.svg" height="36" alt="Claude Code" /></a><br /><sub><b>Claude Code</b></sub></td>
-    <td align="center" width="108"><a href="https://developers.openai.com/codex" title="Codex"><img src="docs/assets/harnesses/codex.svg" height="36" alt="Codex" /></a><br /><sub><b>Codex</b></sub></td>
-    <td align="center" width="108"><a href="https://openclaw.ai" title="OpenClaw"><img src="docs/assets/harnesses/openclaw.svg" height="36" alt="OpenClaw" /></a><br /><sub><b>OpenClaw</b></sub></td>
-    <td align="center" width="108"><a href="https://www.codebuddy.ai" title="CodeBuddy"><img src="docs/assets/harnesses/codebuddy.svg" height="36" alt="CodeBuddy" /></a><br /><sub><b>CodeBuddy</b></sub></td>
-    <td align="center" width="108"><a href="https://www.workbuddy.ai" title="WorkBuddy"><img src="docs/assets/harnesses/workbuddy.svg" height="36" alt="WorkBuddy" /></a><br /><sub><b>WorkBuddy</b></sub></td>
-    <td align="center" width="108"><a href="https://github.com/badlogic/pi-mono" title="Pi"><img src="docs/assets/harnesses/pi.svg" height="36" alt="Pi" /></a><br /><sub><b>Pi</b></sub></td>
-    <td align="center" width="108"><a href="https://github.com/NousResearch/hermes-agent" title="Hermes Agent"><img src="docs/assets/harnesses/hermes.png" height="36" alt="Hermes Agent" /></a><br /><sub><b>Hermes Agent</b></sub></td>
-  </tr>
-</table>
-</p>
+#### 3. Install the skill into your agent harness
 
 ```bash
 bsk install-skill
 ```
 
-Use <kbd>Space</kbd> to select the Agent harness you want to install into, then
-press <kbd>Enter</kbd> to install the skill. Run `bsk install-skill --list` to see
-internal variants and install paths.
+Use <kbd>Space</kbd> to select the agent harness to install into. Other
+shell-capable agent harnesses: copy [`skill/SKILL.md`](skill/SKILL.md) into your
+harness's skills directory as `browser-skill/SKILL.md`.
 
-Other shell-capable agent harnesses are supported too. Copy
-[`skill/SKILL.md`](skill/SKILL.md) into your harness's skills directory as
-`browser-skill/SKILL.md` to install the skill manually. DeepSeek Harness uses a
-dedicated plugin instead — see [DeepSeek Harness plugin](#deepseek-harness-plugin).
+#### 4. Use it
 
-</details>
-
-Start a new Agent session and write a prompt that needs the browser, for example:
+Start a new agent session and write a prompt that needs the browser, for
+example:
 
 ```text
 /browser-skill open example.com and summarize what is on the page.
 ```
 
-## DeepSeek Harness plugin
+## Single-machine mode (default)
 
-Using [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`)?
-BrowserSkill ships a first-class dsh plugin on npm as
-[`@wxg-prc-cpg/browser-skill-dsh-plugin`](https://www.npmjs.com/package/@wxg-prc-cpg/browser-skill-dsh-plugin).
-It injects native `browser_*` tools (no shelling out to `bsk`) and a live Web UI
-overlay of each Agent Window.
-
-Add it to a dsh profile, then start that profile:
-
-```sh
-dsh plugin --profile web add @wxg-prc-cpg/browser-skill-dsh-plugin
-dsh --profile web
+```bash
+bsk daemon start        # loopback daemon, local CLI, local extension
+bsk browsers            # list connected browsers
+bsk navigate --url https://example.com
 ```
 
-The plugin carries its own copy of the skill, so `bsk install-skill` is not needed
-for dsh — but the `bsk` CLI and the browser extension are still prerequisites. See
-the [plugin README](packages/dsh-plugin-browserskill/README.md) for the tool list,
-configuration, and the observation overlay.
+## Gateway mode (multi-agent × multi-host)
 
-## How It Works
+On the **gateway host** (a machine reachable on your LAN / Tailscale):
 
-BrowserSkill is a local bridge between your agent harness and your browser.
-
-```mermaid
-flowchart TB
-  subgraph Harness["Agent Harness"]
-    Agent["Cursor / Claude Code / Codex / OpenClaw"]
-  end
-
-  subgraph Local["Your Machine"]
-    CLI["bsk CLI"]
-    Daemon["bsk daemon"]
-    Extension["BrowserSkill extension"]
-  end
-
-  subgraph Browser["Browser Profile"]
-    AgentWindow["Agent Window"]
-    UserWindows["Your normal browser windows"]
-  end
-
-  Agent -->|"shell: bsk ..."| CLI
-  CLI -->|"local IPC"| Daemon
-  Daemon -->|"WebSocket on 127.0.0.1"| Extension
-  Extension -->|"automates"| AgentWindow
-  Extension -.->|"borrow tab only when asked"| UserWindows
-
-  style AgentWindow fill:#fff4e6,stroke:#f59e0b,stroke-width:2px,color:#111827
-  style UserWindows fill:#f8fafc,stroke:#cbd5e1,color:#334155
+```bash
+bsk daemon start --gateway \
+  --lan-cidr 100.64.0.0/10 \        # Tailscale CGNAT (optional, repeatable)
+  --lan-cidr 192.168.10.0/24 \      # your LAN subnet (optional, repeatable)
+  --agent-token "$AGENT_TOKEN" \
+  --extension-token "$EXT_TOKEN"
 ```
 
-The agent never talks to the browser directly. It asks the `bsk` CLI to perform a
-browser task; the local daemon routes that request to the extension; the
-extension runs it in an Agent Window. DeepSeek Harness takes the same path
-through the [plugin](#deepseek-harness-plugin): the agent calls injected
-`browser_*` tools, and the plugin invokes `bsk` on its behalf.
+On any **browser host**, point the extension at the gateway and set the
+extension token in the popup (Connection settings).
+
+From any **agent machine**:
+
+```bash
+BSK_AGENT_TOKEN="$AGENT_TOKEN" bsk --host <gateway-ip> --port <ws-port> browsers
+BSK_AGENT_TOKEN="$AGENT_TOKEN" bsk --host <gateway-ip> --port <ws-port> --agent-id openclaw:main navigate --url https://example.com
+```
+
+Notes for gateway mode:
+
+- Always pass `--agent-id <agent-name>` so session ownership and Busy semantics
+  are correct across agents.
+- Add `--lan-cidr` entries for every network your peers come from; the daemon
+  refuses connections from outside the allow-list.
+- Never share one `--agent-token` across trust domains.
+- `--share` on a session start explicitly overrides Busy for shared browsers.
+
+## CLI Overview
+
+```
+Usage: bsk [OPTIONS] <COMMAND>
+
+Commands:
+  daemon        Manage the daemon process (start/stop/restart/status)
+  status        Show daemon status
+  doctor        Diagnostics + repair hints (works remotely too)
+  install-skill Install the agent skill into local harnesses
+  update        Check for/install CLI updates (refused for gateway daemons)
+  logs          Print (and optionally follow) the daemon log file
+  session       Session lifecycle (start/cancel/…) with --agent-id and --share
+  browsers      List connected browsers (with agent ownership info)
+  tab           Tab management
+  window        Agent Window management
+  emulate       Mobile device emulation (viewport, UA, touch)
+  screenshot    Capture a PNG of the active tab or a snapshot ref element
+  snapshot      Produce an indented aria-snapshot with @eN refs
+  observe       Produce a semantic VOM observation with perception probes
+  console       Read buffered console/log/exception messages
+  network       Read buffered network responses / failures
+  get-html      Dump raw HTML for a tab or a snapshot ref
+  navigate      Navigate the Agent Window's tab to a URL
+  navigate-back / navigate-forward / reload
+  click / hover / fill / press / select / upload / download / evaluate
+  wait-for-navigation
+
+Global flags (gateway mode):
+  --host <ip>         Connect to a remote gateway (instead of local daemon)
+  --port <port>       Gateway WS port
+  --agent-token <tok> Remote auth token (or BSK_AGENT_TOKEN env)
+```
 
 ## For Developers
 
 The repository is a Cargo + pnpm workspace:
 
-- `crates/bsk-cli` — `bsk` CLI and local daemon
-- `crates/bsk-protocol` — shared wire types and JSON schemas
-- `apps/extension` — browser extension
+- `crates/bsk-cli` — `bsk` CLI and daemon (IPC, gateway, tokens, CIDR gate)
+- `crates/bsk-protocol` — shared wire types, protocol versioning, handshake
+- `apps/extension` — browser extension (popup connection settings, transport)
 - `packages/ui` and `packages/i18n` — shared extension UI support
-- `packages/dsh-plugin-browserskill` — DeepSeek Harness plugin (`@wxg-prc-cpg/browser-skill-dsh-plugin`)
-- [`evals/browser`](evals/browser/README.md) — deterministic local pages and agent-neutral browser capability evaluation
+- [`evals/browser`](evals/browser/README.md) — deterministic local pages and
+  agent-neutral browser capability evaluation
 
-## License
+Tests: `cargo test -p bsk -- --test-threads=1` (unit + integration, including
+`gateway_*` suites) and `cd apps/extension && pnpm test`.
 
-MIT
+## Upstream & License
+
+This project is a fork of [Tencent/BrowserSkill](https://github.com/Tencent/BrowserSkill)
+adding multi-agent gateway capabilities. The original MIT license is preserved
+in [`LICENSE`](LICENSE); both the upstream project and this fork are MIT.

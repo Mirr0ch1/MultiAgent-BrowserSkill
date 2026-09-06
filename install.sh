@@ -2,17 +2,17 @@
 # install.sh — install the bsk CLI on macOS and Linux from GitHub Releases.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Tencent/BrowserSkill/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Mirr0ch1/MultiAgent-BrowserSkill/main/install.sh | sh
 #
 # Environment overrides:
-#   BSK_REPO         GitHub owner/repo (default: Tencent/BrowserSkill)
+#   BSK_REPO         GitHub owner/repo (default: Mirr0ch1/MultiAgent-BrowserSkill)
 #   BSK_VERSION      Pin CLI version (default: latest from version.json)
 #   BSK_INSTALL_DIR  Install directory (default: $HOME/.local/bin)
 #   BSK_BRANCH       Branch for install_sh raw URL metadata only (unused here)
 
 set -eu
 
-REPO="${BSK_REPO:-Tencent/BrowserSkill}"
+REPO="${BSK_REPO:-Mirr0ch1/MultiAgent-BrowserSkill}"
 INSTALL_DIR="${BSK_INSTALL_DIR:-$HOME/.local/bin}"
 GITHUB="https://github.com/${REPO}"
 

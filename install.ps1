@@ -7,10 +7,10 @@ Downloads the latest (or pinned) bsk release for Windows x64,
 extracts bsk.exe to a user-local directory, and adds it to PATH.
 
 Usage:
-  irm https://raw.githubusercontent.com/Tencent/BrowserSkill/main/install.ps1 | iex
+  irm https://raw.githubusercontent.com/Mirr0ch1/MultiAgent-BrowserSkill/main/install.ps1 | iex
 
 Environment overrides:
-  $env:BSK_REPO         GitHub owner/repo (default: Tencent/BrowserSkill)
+  $env:BSK_REPO         GitHub owner/repo (default: Mirr0ch1/MultiAgent-BrowserSkill)
   $env:BSK_VERSION      Pin CLI version (default: latest from version.json)
   $env:BSK_INSTALL_DIR  Install directory (default: $HOME\.local\bin)
 #>
@@ -19,7 +19,7 @@ Environment overrides:
 
 $ErrorActionPreference = "Stop"
 
-$Repo = if ($env:BSK_REPO) { $env:BSK_REPO } else { "Tencent/BrowserSkill" }
+$Repo = if ($env:BSK_REPO) { $env:BSK_REPO } else { "Mirr0ch1/MultiAgent-BrowserSkill" }
 $InstallDir = if ($env:BSK_INSTALL_DIR) { $env:BSK_INSTALL_DIR } else { Join-Path $HOME ".local\bin" }
 $GitHub = "https://github.com/${Repo}"
 
