@@ -1,5 +1,6 @@
 //! Top-level CLI definition (clap derive).
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 mod atomic_output;
@@ -80,6 +81,51 @@ pub struct GlobalFlags {
     /// Increase log verbosity (`-v` debug, `-vv` trace).
     #[arg(short = 'v', long = "verbose", global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
+
+    /// Connect to a remote gateway daemon over TCP IPC (gateway mode).
+    /// When set, every business command talks to `<host>:<port>` instead
+    /// of the local UDS/named pipe, and auto-spawn is disabled.
+    #[arg(long, global = true, value_name = "IP")]
+    pub host: Option<std::net::IpAddr>,
+
+    /// Remote gateway TCP IPC port (used with `--host`).
+    #[arg(long, global = true, value_name = "PORT")]
+    pub port: Option<u16>,
+
+    /// Agent token for remote gateway connections (used with `--host`).
+    /// Falls back to the `BSK_AGENT_TOKEN` env var.
+    #[arg(long, global = true, value_name = "TOKEN")]
+    pub agent_token: Option<String>,
+}
+
+impl GlobalFlags {
+    /// True when the CLI is in remote-gateway mode (`--host` given).
+    pub fn is_remote(&self) -> bool {
+        self.host.is_some()
+    }
+
+    /// Resolve the agent token for remote mode: `--agent-token` wins,
+    /// then `BSK_AGENT_TOKEN`.
+    pub fn resolved_agent_token(&self) -> Option<String> {
+        self.agent_token
+            .clone()
+            .or_else(|| std::env::var("BSK_AGENT_TOKEN").ok())
+    }
+}
+
+/// Process-wide parsed flags, registered once by `main` so that
+/// `ensure_daemon()` and friends can distinguish remote-gateway mode
+/// (auto-spawn must be disabled) from the default local mode.
+static GLOBAL_FLAGS: OnceLock<GlobalFlags> = OnceLock::new();
+
+/// Install the parsed CLI flags; called once at startup.
+pub fn init_global_flags(flags: GlobalFlags) {
+    let _ = GLOBAL_FLAGS.set(flags);
+}
+
+/// Read back the process-wide flags (defaults when unset, e.g. tests).
+pub fn global_flags() -> &'static GlobalFlags {
+    GLOBAL_FLAGS.get_or_init(GlobalFlags::default)
 }
 
 /// Top-level `bsk` CLI.

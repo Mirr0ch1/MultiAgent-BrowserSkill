@@ -25,6 +25,7 @@ fn main() -> ExitCode {
     if !matches!(cli.command, Command::Daemon(_)) {
         init_cli_tracing(&cli.flags);
     }
+    cli::init_global_flags(cli.flags.clone());
     cli::update::print_update_hint_from_cache(&cli.flags, &cli.command);
 
     let format = if cli.flags.json {

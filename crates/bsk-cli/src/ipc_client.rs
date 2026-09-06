@@ -392,3 +392,176 @@ fn random_id() -> String {
     rng.fill(&mut bytes[..]);
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
+
+/// Cross-platform TCP IPC client (gateway remote CLI peers).
+///
+/// Unlike the local UDS / named-pipe [`Client`], the TCP transport is
+/// network-exposed, so [`TcpClient::connect`] authenticates with a
+/// first-frame `system.handshake` carrying the agent token before any
+/// business RPC is accepted (daemon side: `ipc::tcp::serve`).
+pub mod tcp {
+    use std::net::{IpAddr, SocketAddr};
+    use std::time::Duration;
+
+    use anyhow::{Context, Result};
+    use bsk_protocol::{Frame, Method, RequestFrame, ResponseBody};
+    use serde::{Serialize, de::DeserializeOwned};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+    use tokio::net::TcpStream;
+    use tokio::time::timeout;
+
+    use crate::ipc_client::{RpcOutcome, random_id};
+
+    /// TCP IPC client to a remote gateway daemon.
+    pub struct TcpClient {
+        stream: BufReader<OwnedReadHalf>,
+        write: OwnedWriteHalf,
+        addr: SocketAddr,
+    }
+
+    impl TcpClient {
+        /// Connect to `host:port` and authenticate with `agent_token`.
+        /// Fails (and never falls back to auto-spawn) when the gateway
+        /// is unreachable or the handshake is rejected.
+        pub async fn connect(host: IpAddr, port: u16, agent_token: Option<&str>) -> Result<Self> {
+            let addr = SocketAddr::new(host, port);
+            let stream = TcpStream::connect(addr)
+                .await
+                .with_context(|| format!("connect TCP gateway {addr}"))?;
+            let (read, write) = stream.into_split();
+            let mut client = Self {
+                stream: BufReader::new(read),
+                write,
+                addr,
+            };
+            client.authenticate(agent_token).await?;
+            Ok(client)
+        }
+
+        /// Send `system.handshake` with the agent token; the daemon drops
+        /// the connection on mismatch, so we also verify the reported
+        /// `authenticated` flag before considering the link established.
+        async fn authenticate(&mut self, agent_token: Option<&str>) -> Result<()> {
+            let handshake = serde_json::json!({ "token": agent_token });
+            let frame = Frame::Request(RequestFrame {
+                id: random_id(),
+                method: Method::SystemHandshake,
+                params: Some(handshake),
+            });
+            let mut payload = serde_json::to_string(&frame).context("encode handshake")?;
+            payload.push('\n');
+
+            timeout(Duration::from_secs(5), async {
+                self.write.write_all(payload.as_bytes()).await?;
+                self.write.flush().await?;
+                Result::<()>::Ok(())
+            })
+            .await
+            .context("TCP handshake write timed out")??;
+
+            let mut line = String::new();
+            timeout(Duration::from_secs(5), self.stream.read_line(&mut line))
+                .await
+                .context("TCP handshake read timed out")??;
+
+            let frame: Frame =
+                serde_json::from_str(line.trim_end()).context("decode handshake response")?;
+            match frame {
+                Frame::Response(resp) => match resp.body {
+                    ResponseBody::Ok(v) => {
+                        let ok = v
+                            .get("authenticated")
+                            .and_then(|x| x.as_bool())
+                            .unwrap_or(false);
+                        if ok {
+                            Ok(())
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "gateway handshake did not confirm authentication"
+                            ))
+                        }
+                    }
+                    ResponseBody::Err(e) => Err(anyhow::anyhow!(
+                        "gateway handshake rejected: {} ({:?})",
+                        e.message,
+                        e.code
+                    )),
+                },
+                other => Err(anyhow::anyhow!(
+                    "unexpected handshake response: {other:?}"
+                )),
+            }
+        }
+
+        /// Issue a typed RPC over the authenticated TCP connection.
+        pub async fn call<P: Serialize, R: DeserializeOwned>(
+            &mut self,
+            method: Method,
+            params: &P,
+            call_timeout: Duration,
+        ) -> Result<RpcOutcome<R>> {
+            self.call_with_id(random_id(), method, params, call_timeout)
+                .await
+        }
+
+        /// [`TcpClient::call`] with a pinned wire correlation id.
+        pub async fn call_with_id<P: Serialize, R: DeserializeOwned>(
+            &mut self,
+            id: String,
+            method: Method,
+            params: &P,
+            call_timeout: Duration,
+        ) -> Result<RpcOutcome<R>> {
+            let frame = Frame::Request(RequestFrame {
+                id: id.clone(),
+                method,
+                params: Some(serde_json::to_value(params).context("serialise params")?),
+            });
+            let mut payload = serde_json::to_string(&frame).context("encode request")?;
+            payload.push('\n');
+
+            timeout(call_timeout, async {
+                self.write.write_all(payload.as_bytes()).await?;
+                self.write.flush().await?;
+                Result::<()>::Ok(())
+            })
+            .await
+            .context("TCP IPC write timed out")??;
+
+            let mut line = String::new();
+            timeout(call_timeout, self.stream.read_line(&mut line))
+                .await
+                .context("TCP IPC read timed out")??;
+
+            decode_tcp_response(line.trim_end(), &id)
+        }
+
+        /// Remote endpoint address (debug helper).
+        pub fn addr(&self) -> SocketAddr {
+            self.addr
+        }
+    }
+
+    fn decode_tcp_response<R: DeserializeOwned>(line: &str, id: &str) -> Result<RpcOutcome<R>> {
+        let frame: Frame = serde_json::from_str(line).context("decode TCP IPC response")?;
+        match frame {
+            Frame::Response(resp) => {
+                if resp.id != id {
+                    return Err(anyhow::anyhow!(
+                        "TCP IPC response id mismatch: expected {id}, got {}",
+                        resp.id
+                    ));
+                }
+                match resp.body {
+                    ResponseBody::Ok(v) => {
+                        let value: R = serde_json::from_value(v).context("decode result")?;
+                        Ok(Ok(value))
+                    }
+                    ResponseBody::Err(e) => Ok(Err(e)),
+                }
+            }
+            other => Err(anyhow::anyhow!("unexpected frame from gateway: {other:?}")),
+        }
+    }
+}

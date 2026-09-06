@@ -22,7 +22,18 @@ pub const SPAWN_DEADLINE: Duration = Duration::from_millis(3_000);
 
 /// Read `daemon.json` if it's valid; spawn the daemon otherwise. Returns
 /// the connection handle the caller should use.
+///
+/// Remote-gateway mode (`--host` given) short-circuits auto-spawn
+/// entirely: the local daemon must never be silently started when the
+/// user explicitly targeted a gateway (P0 — a remote CLI falling back to
+/// an empty local daemon looks like "no browsers connected" and hides
+/// the real problem).
 pub fn ensure_daemon() -> Result<DaemonInfo> {
+    if crate::cli::global_flags().is_remote() {
+        return Err(anyhow::anyhow!(
+            "remote gateway mode: auto-spawn disabled; connect with `bsk --host <ip> --port <port> ...`"
+        ));
+    }
     if let Some(running) = read_verified()? {
         return Ok(running);
     }
