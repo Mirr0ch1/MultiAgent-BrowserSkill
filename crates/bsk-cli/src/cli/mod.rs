@@ -96,6 +96,12 @@ pub struct GlobalFlags {
     /// Falls back to the `BSK_AGENT_TOKEN` env var.
     #[arg(long, global = true, value_name = "TOKEN")]
     pub agent_token: Option<String>,
+
+    /// Originating agent identity for session ownership / Busy
+    /// semantics (e.g. `openclaw:main`). Falls back to the
+    /// `BSK_AGENT_ID` env var, then the hostname.
+    #[arg(long, global = true, value_name = "ID")]
+    pub agent_id: Option<String>,
 }
 
 impl GlobalFlags {
@@ -110,6 +116,15 @@ impl GlobalFlags {
         self.agent_token
             .clone()
             .or_else(|| std::env::var("BSK_AGENT_TOKEN").ok())
+    }
+
+    /// Resolve the originating agent identity (Busy semantics):
+    /// `--agent-id` wins, then `BSK_AGENT_ID`, then the hostname.
+    /// Session ownership uses this to separate agents sharing a gateway.
+    pub fn agent_id(&self) -> Option<String> {
+        self.agent_id
+            .clone()
+            .or_else(|| std::env::var("BSK_AGENT_ID").ok())
     }
 }
 

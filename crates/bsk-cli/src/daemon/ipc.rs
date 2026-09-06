@@ -730,6 +730,9 @@ struct CliSessionStartParams {
     /// local clients (treated as unowned / never blocked).
     #[serde(default)]
     pub agent: Option<String>,
+    /// Explicit `--share`: override cross-agent Busy refusal.
+    #[serde(default)]
+    pub share: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -838,6 +841,7 @@ async fn handle_session_start(
             height: None,
             focused: None,
             agent: None,
+            share: false,
         }
     } else {
         serde_json::from_value(params).map_err(|err| RpcError {
@@ -871,6 +875,7 @@ async fn handle_session_start(
         state.config.extension_connect_wait,
         DEFAULT_RPC_TIMEOUT,
         params.agent,
+        params.share,
         Some(cancel),
     )
     .await

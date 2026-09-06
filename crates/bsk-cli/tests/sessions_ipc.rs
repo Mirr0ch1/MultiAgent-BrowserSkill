@@ -465,6 +465,7 @@ async fn timing_out_session_start_rolls_back_a_late_extension_success() {
         Duration::ZERO,
         Duration::from_millis(20),
         None,
+        false,
         None,
     )
     .await;

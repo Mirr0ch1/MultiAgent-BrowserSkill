@@ -55,6 +55,11 @@ pub struct SessionStartArgs {
     #[arg(long)]
     pub browser: Option<String>,
 
+    /// Allow concurrent use of a browser currently owned by another
+    /// agent (overrides cross-agent Busy refusal).
+    #[arg(long)]
+    pub share: bool,
+
     /// Agent Window outer width in CSS pixels (100..=7680). Both
     /// `--width` and `--height` must be given to take effect.
     #[arg(long, value_parser = window_size)]
@@ -105,6 +110,12 @@ struct StartParams {
     height: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     focused: Option<bool>,
+    /// Originating agent identity (Busy semantics); `BSK_AGENT_ID` env.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent: Option<String>,
+    /// Explicit `--share`: override cross-agent Busy refusal.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    share: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -186,6 +197,7 @@ fn run_start(sock: PathBuf, args: SessionStartArgs, format: Format) -> Result<()
             width: args.width,
             height: args.height,
             focused: args.no_focus.then_some(false),
+            share: args.share,
         },
     );
     waited.store(true, Ordering::SeqCst);
@@ -220,6 +232,8 @@ pub struct SessionStartOptions {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub focused: Option<bool>,
+    /// Override cross-agent Busy refusal (`--share`).
+    pub share: bool,
 }
 
 /// Start a session and open the Agent Window. Used by `session start` and `record start`.
@@ -232,6 +246,10 @@ pub fn start_session(sock: PathBuf, opts: SessionStartOptions) -> Result<StartRe
             width: opts.width,
             height: opts.height,
             focused: opts.focused,
+            agent: crate::cli::global_flags()
+                .agent_id()
+                .or_else(|| std::env::var("BSK_AGENT_ID").ok()),
+            share: opts.share,
         }),
         SESSION_START_IPC_TIMEOUT,
     )

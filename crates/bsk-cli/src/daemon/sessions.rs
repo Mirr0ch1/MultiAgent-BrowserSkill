@@ -455,6 +455,7 @@ pub async fn start_session(
     connect_wait: Duration,
     timeout_dur: Duration,
     owner_agent: Option<String>,
+    share: bool,
     cancel: Option<AbortToken>,
 ) -> Result<Session, StartSessionError> {
     let selection = registry.select_with_connect_wait(requested, connect_wait);
@@ -486,7 +487,9 @@ pub async fn start_session(
     // sessions on the selected browser, refuse unless the caller
     // explicitly shares (`--share`). Same-agent multi-session stays
     // legal (single agent may legitimately open several tabs).
-    if let Some(agent) = sessions.busy_agent_for(&client.id, owner_agent.as_deref()) {
+    if !share
+        && let Some(agent) = sessions.busy_agent_for(&client.id, owner_agent.as_deref())
+    {
         return Err(StartSessionError::Busy {
             browser_instance_id: client.id.0.clone(),
             agent,
