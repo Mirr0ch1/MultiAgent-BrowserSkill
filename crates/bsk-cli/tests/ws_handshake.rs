@@ -53,7 +53,7 @@ pub async fn send_handshake(
     let params = HandshakeParams {
         client: "browser-skill-extension".into(),
         version: "0.1.0-dev.0".parse().unwrap(),
-        protocol_version: "1.1".into(),
+        protocol_version: "1.2".into(),
         instance_id: instance_id.into(),
         browser: BrowserPeerInfo {
             name: "chrome".into(),
@@ -62,7 +62,9 @@ pub async fn send_handshake(
         min_compatible_peer: Some("0.1.0-dev.0".parse().unwrap()),
         min_compatible_protocol: Some("1.0".into()),
         label: "Test Chrome".into(),
-    };
+    
+        token: None,
+        agent_id: None,};
     let req = RequestFrame {
         id: "hs-1".into(),
         method: Method::SystemHandshake,
@@ -91,7 +93,7 @@ async fn ws_handshake_registers_browser_in_state() {
     let mut ws = connect_ext(handle.ws_addr(), &origin).await;
     let result = send_handshake(&mut ws, TEST_EXT_ID).await;
     assert_eq!(result.server, "browser-skill-daemon");
-    assert_eq!(result.protocol_version, "1.1");
+    assert_eq!(result.protocol_version, "1.2");
 
     let state = handle.state();
     let browsers = state.browsers.snapshot();

@@ -448,6 +448,19 @@ pub struct HandshakeParams {
     /// Lowest peer **protocol** version this side accepts (e.g. `"1.0"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_compatible_protocol: Option<String>,
+
+    /// Gateway auth token. Extension peers carry the register-only
+    /// extension token; CLI peers carry the full-privilege agent token.
+    /// Absent for legacy localhost-only peers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub token: Option<String>,
+
+    /// Originating agent identity (e.g. `openclaw:main`). Set by CLI
+    /// peers; used for session ownership and cross-agent Busy semantics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub agent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

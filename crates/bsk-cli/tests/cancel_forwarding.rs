@@ -84,7 +84,9 @@ async fn handshake_as_ext(
         label: "Test".into(),
         min_compatible_peer: Some("0.1.0-dev.0".parse().unwrap()),
         min_compatible_protocol: Some("1.0".into()),
-    };
+    
+        token: None,
+        agent_id: None,};
     let req = RequestFrame {
         id: "hs".into(),
         method: Method::SystemHandshake,
