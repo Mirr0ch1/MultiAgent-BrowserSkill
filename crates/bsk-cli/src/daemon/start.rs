@@ -133,6 +133,21 @@ impl From<&StartArgs> for DaemonConfig {
 pub fn run_start(args: StartArgs) -> Result<()> {
     let cfg = DaemonConfig::from(&args);
 
+    // Gateway interlock (P0): binding a non-loopback address without a
+    // configured token would expose the full control surface to the LAN
+    // with zero authentication. Constructive safety: refuse to start.
+    if !cfg.listen_ip.is_loopback()
+        && cfg.agent_token.is_none()
+        && cfg.extension_token.is_none()
+    {
+        return Err(anyhow::anyhow!(
+            "refusing to bind non-loopback {} without a configured token; \
+             pass --agent-token / --extension-token (or use --gateway with \
+             a token file)",
+            cfg.listen_ip
+        ));
+    }
+
     if args.foreground {
         return run_foreground(cfg);
     }
@@ -260,8 +275,19 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
         // the replacement daemon has already been spawned, so this
         // process should shut down and let it take over.
         let restart_notify = Arc::new(tokio::sync::Notify::new());
-        let update_check_task =
-            spawn_update_check_task(Arc::clone(&state), Arc::clone(&restart_notify));
+        // Gateway mode disables daemon auto-update entirely: a fork
+        // gateway replaced by an upstream Release would silently lose
+        // its token/auth configuration (P0). Non-gateway keeps upstream
+        // behaviour.
+        let update_check_task = if cfg.gateway_mode {
+            info!("gateway mode: daemon auto-update disabled");
+            None
+        } else {
+            Some(spawn_update_check_task(
+                Arc::clone(&state),
+                Arc::clone(&restart_notify),
+            ))
+        };
         let ws_addr = SocketAddr::new(cfg.listen_ip, cfg.ws_port);
         let ws_handle = ws::WsServer::new(Arc::clone(&state))
             .bind(ws_addr)
@@ -473,8 +499,10 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
         let _ = session_idle_task.await;
         browser_liveness_task.abort();
         let _ = browser_liveness_task.await;
-        update_check_task.abort();
-        let _ = update_check_task.await;
+        if let Some(update_check_task) = update_check_task {
+            update_check_task.abort();
+            let _ = update_check_task.await;
+        }
         ws_handle.shutdown.notify_waiters();
         let _ = ws_handle.task.await;
 
