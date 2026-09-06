@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -15,7 +15,7 @@ use bsk_protocol::tools::{
 };
 use clap::{Args, ValueEnum};
 
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 use crate::cli::interaction::split_target;
 use crate::cli::navigate::parse_timeout_ms;
@@ -65,15 +65,15 @@ pub fn dispatch(args: UploadArgs, format: Format) -> Result<(), CliError> {
             crate::daemon::file_transfer::MAX_UPLOAD_FILES
         )));
     }
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let (ref_, selector) = split_target(args.target, args.ref_, args.selector)?;
     let mut staged = Vec::new();
     for path in &args.files {
-        match stage_file(&info.sock_path, &args.session, path) {
+        match stage_file(&endpoint, &args.session, path) {
             Ok(file) => staged.push(file),
             Err(err) => {
                 for (id, _) in &staged {
-                    let _ = release(&info.sock_path, id);
+                    let _ = release(&endpoint, id);
                 }
                 return Err(err);
             }
@@ -96,7 +96,7 @@ pub fn dispatch(args: UploadArgs, format: Format) -> Result<(), CliError> {
         timeout_ms: Some(args.timeout),
     };
     let result = crate::cli::business_rpc::call::<_, UploadResult>(
-        info.sock_path.clone(),
+        &endpoint,
         "upload",
         Method::ToolUpload,
         Some(params),
@@ -118,7 +118,7 @@ pub fn dispatch(args: UploadArgs, format: Format) -> Result<(), CliError> {
     Ok(())
 }
 
-fn stage_file(sock: &Path, session: &str, path: &PathBuf) -> Result<(String, String), CliError> {
+fn stage_file(endpoint: &Endpoint, session: &str, path: &PathBuf) -> Result<(String, String), CliError> {
     let mut file = File::open(path)
         .with_context(|| format!("open upload file {}", path.display()))
         .map_err(CliError::Local)?;
@@ -139,7 +139,7 @@ fn stage_file(sock: &Path, session: &str, path: &PathBuf) -> Result<(String, Str
         .ok_or_else(|| CliError::Local(anyhow::anyhow!("upload file has no valid basename")))?
         .to_string();
     let begin: TransferBeginResult = crate::cli::business_rpc::call(
-        sock.to_path_buf(),
+        endpoint,
         "transfer-begin",
         Method::TransferBegin,
         Some(TransferBeginParams {
@@ -158,7 +158,7 @@ fn stage_file(sock: &Path, session: &str, path: &PathBuf) -> Result<(String, Str
                 break;
             }
             let reply: TransferChunkResult = crate::cli::business_rpc::call(
-                sock.to_path_buf(),
+                endpoint,
                 "transfer-chunk",
                 Method::TransferChunk,
                 Some(TransferChunkParams {
@@ -171,7 +171,7 @@ fn stage_file(sock: &Path, session: &str, path: &PathBuf) -> Result<(String, Str
             offset = reply.next_offset;
         }
         let _: TransferReadyResult = crate::cli::business_rpc::call(
-            sock.to_path_buf(),
+            endpoint,
             "transfer-finish",
             Method::TransferFinish,
             Some(TransferIdParams {
@@ -182,15 +182,15 @@ fn stage_file(sock: &Path, session: &str, path: &PathBuf) -> Result<(String, Str
         Ok::<_, CliError>(())
     })();
     if let Err(err) = staged {
-        let _ = release(sock, &begin.transfer_id);
+        let _ = release(endpoint, &begin.transfer_id);
         return Err(err);
     }
     Ok((begin.transfer_id, name))
 }
 
-fn release(sock: &Path, id: &str) -> Result<TransferReleaseResult, CliError> {
+fn release(endpoint: &Endpoint, id: &str) -> Result<TransferReleaseResult, CliError> {
     crate::cli::business_rpc::call(
-        sock.to_path_buf(),
+        endpoint,
         "transfer-release",
         Method::TransferRelease,
         Some(TransferIdParams {

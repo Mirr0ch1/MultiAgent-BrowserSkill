@@ -1,6 +1,5 @@
 //! `bsk browsers` — list connected extension clients (M4).
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -12,7 +11,7 @@ use serde::Deserialize;
 use crate::cli::browser_wait::{
     browser_connect_wait, browser_query_ipc_timeout, wait_for_browser_ms,
 };
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Deserialize)]
@@ -21,17 +20,17 @@ struct ListReply {
 }
 
 pub fn dispatch(format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    run_list(info.sock_path, format)
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    run_list(&endpoint, format)
 }
 
-fn run_list(sock: PathBuf, format: Format) -> Result<(), CliError> {
+fn run_list(endpoint: &Endpoint, format: Format) -> Result<(), CliError> {
     let wait = browser_connect_wait();
     let params = BrowserListParams {
         wait_for_browser_ms: wait_for_browser_ms(wait),
     };
     let timeout = browser_query_ipc_timeout(wait, Duration::from_secs(5));
-    let reply: ListReply = call(sock, params, timeout)?;
+    let reply: ListReply = call(endpoint, params, timeout)?;
     match format {
         Format::Json => {
             println!(
@@ -102,7 +101,7 @@ fn run_list(sock: PathBuf, format: Format) -> Result<(), CliError> {
 }
 
 fn call(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     params: BrowserListParams,
     timeout: Duration,
 ) -> Result<ListReply, CliError> {
@@ -112,7 +111,7 @@ fn call(
         .context("build tokio runtime for browser.list RPC")
         .map_err(CliError::Local)?;
     rt.block_on(async move {
-        let mut client = crate::ipc_client::IpcClient::connect(sock).await?;
+        let mut client = crate::ipc_client::AnyClient::connect(endpoint).await?;
         let outcome = client
             .call("browser-list-1", Method::BrowserList, Some(params), timeout)
             .await?;

@@ -1,6 +1,5 @@
 //! `bsk window …` subcommands — Agent Window management.
 
-use std::path::PathBuf;
 
 use anyhow::Context;
 use bsk_protocol::Method;
@@ -8,7 +7,7 @@ use bsk_protocol::tools::{WindowResizeParams, WindowResizeResult};
 use clap::{Args, Subcommand};
 
 use crate::cli::TOOL_IPC_TIMEOUT;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Args)]
@@ -53,20 +52,20 @@ fn window_size(s: &str) -> Result<u32, String> {
 }
 
 pub fn dispatch(cmd: WindowCmd, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     match cmd.sub {
-        WindowSub::Resize(args) => run_resize(info.sock_path, args, format),
+        WindowSub::Resize(args) => run_resize(&endpoint, args, format),
     }
 }
 
-fn run_resize(sock: PathBuf, args: WindowResizeArgs, format: Format) -> Result<(), CliError> {
+fn run_resize(endpoint: &Endpoint, args: WindowResizeArgs, format: Format) -> Result<(), CliError> {
     let params = WindowResizeParams {
         session_id: args.session,
         width: args.width,
         height: args.height,
     };
     let reply: WindowResizeResult =
-        ipc_call("window-resize-1", Method::ToolWindowResize, sock, params)?;
+        ipc_call("window-resize-1", Method::ToolWindowResize, endpoint, params)?;
     match format {
         Format::Json => {
             let json = serde_json::to_string_pretty(&reply)
@@ -86,7 +85,7 @@ fn run_resize(sock: PathBuf, args: WindowResizeArgs, format: Format) -> Result<(
 fn ipc_call<P, R>(
     rpc_id_prefix: &'static str,
     method: Method,
-    sock: PathBuf,
+    endpoint: &Endpoint,
     params: P,
 ) -> Result<R, CliError>
 where
@@ -94,7 +93,7 @@ where
     R: serde::de::DeserializeOwned + Send + 'static,
 {
     crate::cli::business_rpc::call::<P, R>(
-        sock,
+        endpoint,
         rpc_id_prefix,
         method,
         Some(params),

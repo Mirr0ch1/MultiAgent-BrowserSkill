@@ -18,7 +18,6 @@
 //! `IpcClient::call` directly so SIGINT keeps its default
 //! "kill the CLI process" behaviour for short status reads.
 
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -27,8 +26,9 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tracing::debug;
 
+use crate::cli::ensure_daemon::Endpoint;
 use crate::cli::error::CliError;
-use crate::ipc_client::IpcClient;
+use crate::ipc_client::AnyClient;
 
 /// Hard cap on how long we wait for the cancelled RPC to settle after
 /// SIGINT triggers. Picked per design §4.6 ("≤ 2s, then force exit").
@@ -39,9 +39,10 @@ pub const CANCEL_RESPONSE_GRACE: Duration = Duration::from_secs(2);
 const CANCEL_FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Issue a business RPC against the daemon with SIGINT-driven
-/// cancellation.
+/// cancellation. Accepts either a local UDS endpoint or a remote
+/// gateway endpoint (P0 audit fix).
 pub fn call<P, R>(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     rpc_id_prefix: &str,
     method: Method,
     params: Option<P>,
@@ -57,13 +58,13 @@ where
         .context("build tokio runtime for business RPC")
         .map_err(CliError::Local)?;
     rt.block_on(async move {
-        call_async::<P, R>(sock, rpc_id_prefix, method, params, call_timeout).await
+        call_async::<P, R>(endpoint, rpc_id_prefix, method, params, call_timeout).await
     })
 }
 
 /// Same as [`call`] but assumes a pre-existing tokio runtime context.
 pub async fn call_async<P, R>(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     rpc_id_prefix: &str,
     method: Method,
     params: Option<P>,
@@ -74,7 +75,7 @@ where
     R: DeserializeOwned + Send + 'static,
 {
     let rpc_id: RpcId = format!("{}-{}", rpc_id_prefix, random_short_id());
-    let mut client = IpcClient::connect(sock.clone()).await?;
+    let mut client = AnyClient::connect(endpoint).await?;
     let rpc_id_for_call = rpc_id.clone();
     let rpc_id_for_cancel = rpc_id.clone();
 
@@ -91,7 +92,7 @@ where
         sig = wait_for_sigint() => {
             sig.context("install SIGINT handler").map_err(CliError::Local)?;
             debug!(rpc_id = %rpc_id_for_cancel, "SIGINT: forwarding cancel to daemon");
-            let _ = send_cancel(&sock, &rpc_id_for_cancel).await;
+            let _ = send_cancel(endpoint, &rpc_id_for_cancel).await;
             match tokio::time::timeout(CANCEL_RESPONSE_GRACE, &mut main_fut).await {
                 Ok(res) => res?,
                 Err(_) => {
@@ -122,8 +123,8 @@ where
 /// name since M9. The CLI sticks to whatever the protocol crate
 /// exports as `Method::Cancel` so drift between docs and code
 /// stays loud.
-pub async fn send_cancel(sock: &Path, rpc_id: &str) -> anyhow::Result<()> {
-    let mut client = IpcClient::connect(sock).await?;
+pub async fn send_cancel(endpoint: &Endpoint, rpc_id: &str) -> anyhow::Result<()> {
+    let mut client = AnyClient::connect(endpoint).await?;
     let cancel_id = format!("cancel-{}", random_short_id());
     let _ignored: anyhow::Result<std::result::Result<CancelResult, RpcError>> = client
         .call_with_id::<_, CancelResult>(

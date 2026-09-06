@@ -1,6 +1,5 @@
 //! `bsk observe` — semantic VOM observation with bounded perception probes.
 
-use std::path::PathBuf;
 
 use anyhow::Context;
 use bsk_protocol::Method;
@@ -9,7 +8,7 @@ use clap::Args;
 
 use crate::cli::TOOL_IPC_TIMEOUT;
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Args)]
@@ -42,11 +41,11 @@ pub struct ObserveArgs {
 }
 
 pub fn dispatch(args: ObserveArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    run(info.sock_path, args, format)
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    run(&endpoint, args, format)
 }
 
-fn run(sock: PathBuf, args: ObserveArgs, format: Format) -> Result<(), CliError> {
+fn run(endpoint: &Endpoint, args: ObserveArgs, format: Format) -> Result<(), CliError> {
     let params = ObserveParams {
         session_id: args.session.clone(),
         tab_id: args.tab_id,
@@ -55,7 +54,7 @@ fn run(sock: PathBuf, args: ObserveArgs, format: Format) -> Result<(), CliError>
         debug_surfaces: args.debug_surfaces,
         probe_hover: args.probe_hover,
     };
-    let reply: ObserveResult = call(sock, params)?;
+    let reply: ObserveResult = call(endpoint, params)?;
     match format {
         Format::Json => {
             let json = serde_json::to_string_pretty(&reply)
@@ -80,9 +79,9 @@ fn run(sock: PathBuf, args: ObserveArgs, format: Format) -> Result<(), CliError>
     Ok(())
 }
 
-fn call(sock: PathBuf, params: ObserveParams) -> Result<ObserveResult, CliError> {
+fn call(endpoint: &Endpoint, params: ObserveParams) -> Result<ObserveResult, CliError> {
     crate::cli::business_rpc::call::<ObserveParams, ObserveResult>(
-        sock,
+        endpoint,
         "observe",
         Method::ToolObserve,
         Some(params),

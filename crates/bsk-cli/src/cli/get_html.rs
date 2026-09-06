@@ -13,7 +13,7 @@ use clap::Args;
 
 use crate::cli::TOOL_IPC_TIMEOUT;
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Args)]
@@ -41,18 +41,18 @@ pub struct GetHtmlArgs {
 }
 
 pub fn dispatch(args: GetHtmlArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    run(info.sock_path, args, format)
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    run(&endpoint, args, format)
 }
 
-fn run(sock: PathBuf, args: GetHtmlArgs, format: Format) -> Result<(), CliError> {
+fn run(endpoint: &Endpoint, args: GetHtmlArgs, format: Format) -> Result<(), CliError> {
     let params = GetHtmlParams {
         session_id: args.session.clone(),
         tab_id: args.tab_id,
         ref_: args.ref_.clone(),
         max_bytes: args.max_bytes,
     };
-    let reply: GetHtmlResult = call(sock, params)?;
+    let reply: GetHtmlResult = call(endpoint, params)?;
     if let Some(out) = &args.out {
         std::fs::write(out, reply.html.as_bytes())
             .with_context(|| format!("write HTML to {}", out.display()))
@@ -85,9 +85,9 @@ fn run(sock: PathBuf, args: GetHtmlArgs, format: Format) -> Result<(), CliError>
     Ok(())
 }
 
-fn call(sock: PathBuf, params: GetHtmlParams) -> Result<GetHtmlResult, CliError> {
+fn call(endpoint: &Endpoint, params: GetHtmlParams) -> Result<GetHtmlResult, CliError> {
     crate::cli::business_rpc::call::<GetHtmlParams, GetHtmlResult>(
-        sock,
+        endpoint,
         "get-html",
         Method::ToolGetHtml,
         Some(params),

@@ -11,7 +11,6 @@
 //! * RPC failure (`not_found / permission_denied / cdp_failed / …`) →
 //!   normal `CliError` path with the usual non-zero exit codes.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -20,7 +19,7 @@ use bsk_protocol::tools::{EvaluateParams, EvaluateResult};
 use clap::Args;
 
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 use crate::cli::navigate::parse_timeout_ms;
 
@@ -56,7 +55,7 @@ pub struct EvaluateArgs {
 }
 
 pub fn dispatch(args: EvaluateArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let params = EvaluateParams {
         session_id: args.session,
         expression: args.expression,
@@ -65,17 +64,17 @@ pub fn dispatch(args: EvaluateArgs, format: Format) -> Result<(), CliError> {
         return_by_value: Some(args.return_by_value),
         timeout_ms: Some(args.timeout),
     };
-    let reply = call(info.sock_path, params, args.timeout)?;
+    let reply = call(&endpoint, params, args.timeout)?;
     render(&reply, format)
 }
 
 fn call(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     params: EvaluateParams,
     timeout_ms: u32,
 ) -> Result<EvaluateResult, CliError> {
     crate::cli::business_rpc::call::<EvaluateParams, EvaluateResult>(
-        sock,
+        endpoint,
         "evaluate",
         Method::ToolEvaluate,
         Some(params),

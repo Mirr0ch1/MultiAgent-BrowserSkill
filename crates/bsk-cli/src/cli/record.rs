@@ -16,7 +16,7 @@ use crate::cli::TOOL_IPC_TIMEOUT;
 mod export;
 
 use crate::cli::business_rpc;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::resolve_endpoint;
 use crate::cli::error::{CliError, Format};
 use crate::cli::record_recovery;
 use crate::cli::record_state;
@@ -98,9 +98,9 @@ pub fn dispatch(cmd: RecordCmd, format: Format) -> Result<(), CliError> {
 fn dispatch_start(args: RecordStartArgs, format: Format) -> Result<(), CliError> {
     prepare_record_start(&args.output)?;
 
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let session = start_session(
-        info.sock_path.clone(),
+        &endpoint,
         SessionStartOptions {
             browser: args.browser,
             ..SessionStartOptions::default()
@@ -118,7 +118,7 @@ fn dispatch_start(args: RecordStartArgs, format: Format) -> Result<(), CliError>
         supports_tab_switch_steps: Some(true),
     };
     let start_result = business_rpc::call::<RecordStartParams, RecordStartResult>(
-        info.sock_path.clone(),
+        &endpoint,
         "record-start",
         Method::ToolRecordStart,
         Some(start_params),
@@ -128,13 +128,13 @@ fn dispatch_start(args: RecordStartArgs, format: Format) -> Result<(), CliError>
     let start_result = match start_result {
         Ok(result) => result,
         Err(err) => {
-            let _ = stop_session(info.sock_path, &session.session_id);
+            let _ = stop_session(&endpoint, &session.session_id);
             return Err(annotate_default_start_page_error(err, args.url.as_deref()));
         }
     };
 
     if let Err(err) = record_state::write(&session.session_id) {
-        let _ = stop_session(info.sock_path.clone(), &session.session_id);
+        let _ = stop_session(&endpoint, &session.session_id);
         return Err(CliError::Local(err));
     }
 
@@ -150,7 +150,7 @@ fn dispatch_start(args: RecordStartArgs, format: Format) -> Result<(), CliError>
         timeout_ms: Some(RECORD_AWAIT_TIMEOUT_MS),
     };
     let await_result = business_rpc::call::<RecordAwaitParams, RecordAwaitResult>(
-        info.sock_path.clone(),
+        &endpoint,
         "record-await",
         Method::ToolRecordAwait,
         Some(await_params),
@@ -166,7 +166,7 @@ fn dispatch_start(args: RecordStartArgs, format: Format) -> Result<(), CliError>
         Err(err) => Err(err),
     };
 
-    let session_stop_result = stop_session(info.sock_path, &session.session_id);
+    let session_stop_result = stop_session(&endpoint, &session.session_id);
     record_state::clear();
 
     run_result?;
@@ -178,14 +178,14 @@ fn dispatch_stop(args: RecordStopArgs, format: Format) -> Result<(), CliError> {
     validate_record_output(&args.output)?;
 
     if let Ok(state) = record_state::read() {
-        let info = ensure_daemon().context("ensure daemon is running")?;
+        let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
         let session_id = state.session_id.clone();
 
         let params = RecordStopParams {
             session_id: session_id.clone(),
         };
         let result = business_rpc::call::<RecordStopParams, RecordStopResult>(
-            info.sock_path.clone(),
+            &endpoint,
             "record-stop",
             Method::ToolRecordStop,
             Some(params),
@@ -197,7 +197,7 @@ fn dispatch_stop(args: RecordStopArgs, format: Format) -> Result<(), CliError> {
             render_stop(&result, &args.output, &exported, format)
         })();
 
-        let session_stop_result = stop_session(info.sock_path, &session_id);
+        let session_stop_result = stop_session(&endpoint, &session_id);
         record_state::clear();
 
         run_result?;

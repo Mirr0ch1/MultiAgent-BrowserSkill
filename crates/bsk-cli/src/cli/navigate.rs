@@ -4,7 +4,6 @@
 //! human-readable output is one line per result — the JSON path
 //! emits the full bsk-protocol payload.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -17,7 +16,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -162,7 +161,7 @@ pub fn dispatch_navigate_command(args: NavigateCommand, format: Format) -> Resul
 }
 
 pub fn dispatch_navigate(args: NavigateArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let Some(url) = args.url.clone() else {
         return Err(CliError::Local(anyhow::anyhow!("navigate requires a url")));
     };
@@ -179,7 +178,7 @@ pub fn dispatch_navigate(args: NavigateArgs, format: Format) -> Result<(), CliEr
         timeout_ms: Some(args.timeout),
     };
     let reply: NavigateResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolNavigate,
         params,
         "navigate-1",
@@ -189,7 +188,7 @@ pub fn dispatch_navigate(args: NavigateArgs, format: Format) -> Result<(), CliEr
 }
 
 pub fn dispatch_navigate_back(args: NavigateHistoryArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let params = NavigateBackParams {
         session_id: args.session.clone(),
         tab_id: args.tab_id,
@@ -197,7 +196,7 @@ pub fn dispatch_navigate_back(args: NavigateHistoryArgs, format: Format) -> Resu
         timeout_ms: Some(args.timeout),
     };
     let reply: NavigateBackResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolNavigateBack,
         params,
         "navigate-back-1",
@@ -210,7 +209,7 @@ pub fn dispatch_navigate_forward(
     args: NavigateHistoryArgs,
     format: Format,
 ) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let params = NavigateForwardParams {
         session_id: args.session.clone(),
         tab_id: args.tab_id,
@@ -218,7 +217,7 @@ pub fn dispatch_navigate_forward(
         timeout_ms: Some(args.timeout),
     };
     let reply: NavigateForwardResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolNavigateForward,
         params,
         "navigate-forward-1",
@@ -228,7 +227,7 @@ pub fn dispatch_navigate_forward(
 }
 
 pub fn dispatch_reload(args: ReloadArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let params = ReloadParams {
         session_id: args.session.clone(),
         tab_id: args.tab_id,
@@ -237,7 +236,7 @@ pub fn dispatch_reload(args: ReloadArgs, format: Format) -> Result<(), CliError>
         hard: if args.hard { Some(true) } else { None },
     };
     let reply: ReloadResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolReload,
         params,
         "reload-1",
@@ -247,7 +246,7 @@ pub fn dispatch_reload(args: ReloadArgs, format: Format) -> Result<(), CliError>
 }
 
 fn call<P, R>(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     method: Method,
     params: P,
     id: &'static str,
@@ -258,7 +257,7 @@ where
     R: serde::de::DeserializeOwned + Send + 'static,
 {
     crate::cli::business_rpc::call::<P, R>(
-        sock,
+        endpoint,
         id,
         method,
         Some(params),

@@ -13,7 +13,7 @@ use clap::Args;
 
 use crate::cli::TOOL_IPC_TIMEOUT;
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Args)]
@@ -37,17 +37,17 @@ pub struct ScreenshotArgs {
 }
 
 pub fn dispatch(args: ScreenshotArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    run(info.sock_path, args, format)
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    run(&endpoint, args, format)
 }
 
-fn run(sock: PathBuf, args: ScreenshotArgs, format: Format) -> Result<(), CliError> {
+fn run(endpoint: &Endpoint, args: ScreenshotArgs, format: Format) -> Result<(), CliError> {
     let params = ScreenshotParams {
         session_id: args.session.clone(),
         tab_id: args.tab_id,
         ref_: args.ref_.clone(),
     };
-    let reply: ScreenshotResult = call(sock, params)?;
+    let reply: ScreenshotResult = call(endpoint, params)?;
     let out_path = match &args.out {
         Some(p) => p.clone(),
         None => default_out_path(),
@@ -91,9 +91,9 @@ fn default_out_path() -> PathBuf {
     dir
 }
 
-fn call(sock: PathBuf, params: ScreenshotParams) -> Result<ScreenshotResult, CliError> {
+fn call(endpoint: &Endpoint, params: ScreenshotParams) -> Result<ScreenshotResult, CliError> {
     crate::cli::business_rpc::call::<ScreenshotParams, ScreenshotResult>(
-        sock,
+        endpoint,
         "screenshot",
         Method::ToolScreenshot,
         Some(params),

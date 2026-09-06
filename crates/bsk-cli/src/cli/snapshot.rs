@@ -2,7 +2,6 @@
 //! tab (M6.3). Text format is human-readable with `@eN` refs the
 //! agent feeds back into `bsk click`, `bsk fill`, etc.
 
-use std::path::PathBuf;
 
 use anyhow::Context;
 use bsk_protocol::Method;
@@ -11,7 +10,7 @@ use clap::Args;
 
 use crate::cli::TOOL_IPC_TIMEOUT;
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Args)]
@@ -34,18 +33,18 @@ pub struct SnapshotArgs {
 }
 
 pub fn dispatch(args: SnapshotArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    run(info.sock_path, args, format)
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    run(&endpoint, args, format)
 }
 
-fn run(sock: PathBuf, args: SnapshotArgs, format: Format) -> Result<(), CliError> {
+fn run(endpoint: &Endpoint, args: SnapshotArgs, format: Format) -> Result<(), CliError> {
     let params = SnapshotParams {
         session_id: args.session.clone(),
         tab_id: args.tab_id,
         max_depth: args.max_depth,
         max_tokens: args.max_tokens,
     };
-    let reply: SnapshotResult = call(sock, params)?;
+    let reply: SnapshotResult = call(endpoint, params)?;
     match format {
         Format::Json => {
             let json = serde_json::to_string_pretty(&reply)
@@ -70,9 +69,9 @@ fn run(sock: PathBuf, args: SnapshotArgs, format: Format) -> Result<(), CliError
     Ok(())
 }
 
-fn call(sock: PathBuf, params: SnapshotParams) -> Result<SnapshotResult, CliError> {
+fn call(endpoint: &Endpoint, params: SnapshotParams) -> Result<SnapshotResult, CliError> {
     crate::cli::business_rpc::call::<SnapshotParams, SnapshotResult>(
-        sock,
+        endpoint,
         "snapshot",
         Method::ToolSnapshot,
         Some(params),

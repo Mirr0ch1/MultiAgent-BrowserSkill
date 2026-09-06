@@ -4,7 +4,6 @@
 //! `e3`) or a CSS selector. Use `--ref` / `--selector` explicitly when
 //! the value is ambiguous.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -16,7 +15,7 @@ use bsk_protocol::tools::{
 use clap::{Args, ValueEnum};
 
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 use crate::cli::navigate::parse_timeout_ms;
 
@@ -139,7 +138,7 @@ pub struct ClickArgs {
 }
 
 pub fn dispatch_click(args: ClickArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let (ref_, selector) = split_target(
         args.target.clone(),
         args.ref_.clone(),
@@ -162,7 +161,7 @@ pub fn dispatch_click(args: ClickArgs, format: Format) -> Result<(), CliError> {
         timeout_ms: Some(args.timeout),
     };
     let reply: ClickResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolClick,
         params,
         "click-1",
@@ -225,7 +224,7 @@ pub struct HoverArgs {
 }
 
 pub fn dispatch_hover(args: HoverArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let (ref_, selector) = split_target(
         args.target.clone(),
         args.ref_.clone(),
@@ -247,7 +246,7 @@ pub fn dispatch_hover(args: HoverArgs, format: Format) -> Result<(), CliError> {
         timeout_ms: Some(args.timeout),
     };
     let reply: HoverResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolHover,
         params,
         "hover-1",
@@ -309,7 +308,7 @@ pub struct FillArgs {
 }
 
 pub fn dispatch_fill(args: FillArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let (ref_, selector) = split_target(
         args.target.clone(),
         args.ref_.clone(),
@@ -325,7 +324,7 @@ pub fn dispatch_fill(args: FillArgs, format: Format) -> Result<(), CliError> {
         timeout_ms: Some(args.timeout),
     };
     let reply: FillResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolFill,
         params,
         "fill-1",
@@ -388,7 +387,7 @@ pub struct PressArgs {
 }
 
 pub fn dispatch_press(args: PressArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let modifiers = parse_modifiers(&args.modifiers)
         .map_err(|e| CliError::Local(anyhow::anyhow!("--modifiers: {e}")))?;
     let params = PressParams {
@@ -406,7 +405,7 @@ pub fn dispatch_press(args: PressArgs, format: Format) -> Result<(), CliError> {
         timeout_ms: Some(args.timeout),
     };
     let reply: PressResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolPress,
         params,
         "press-1",
@@ -475,7 +474,7 @@ pub struct SelectArgs {
 }
 
 pub fn dispatch_select(args: SelectArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let (ref_, selector) = split_target(
         args.target.clone(),
         args.ref_.clone(),
@@ -490,7 +489,7 @@ pub fn dispatch_select(args: SelectArgs, format: Format) -> Result<(), CliError>
         timeout_ms: Some(args.timeout),
     };
     let reply: SelectResult = call(
-        info.sock_path,
+        &endpoint,
         Method::ToolSelect,
         params,
         "select-1",
@@ -536,7 +535,7 @@ fn modifier_label(m: &KeyModifier) -> &'static str {
 }
 
 fn call<P, R>(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     method: Method,
     params: P,
     id: &'static str,
@@ -547,7 +546,7 @@ where
     R: serde::de::DeserializeOwned + Send + 'static,
 {
     crate::cli::business_rpc::call::<P, R>(
-        sock,
+        endpoint,
         id,
         method,
         Some(params),

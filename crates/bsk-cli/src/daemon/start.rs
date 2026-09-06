@@ -133,18 +133,26 @@ impl From<&StartArgs> for DaemonConfig {
 pub fn run_start(args: StartArgs) -> Result<()> {
     let cfg = DaemonConfig::from(&args);
 
-    // Gateway interlock (P0): binding a non-loopback address without a
-    // configured token would expose the full control surface to the LAN
-    // with zero authentication. Constructive safety: refuse to start.
-    if !cfg.listen_ip.is_loopback()
-        && cfg.agent_token.is_none()
-        && cfg.extension_token.is_none()
-    {
+    // Gateway interlock (P0): binding any listener to a non-loopback
+    // address without the corresponding token must refuse to start.
+    // Two transports, two separate requirements:
+    //  - WS (extension registration + tool dispatch) is always bound to
+    //    `listen_ip`, so a non-loopback listen requires `extension_token`.
+    //  - TCP IPC (remote CLI control plane) exists only when
+    //    `--agent-port` is set, and then requires `agent_token`.
+    if !cfg.listen_ip.is_loopback() && cfg.extension_token.is_none() {
         return Err(anyhow::anyhow!(
-            "refusing to bind non-loopback {} without a configured token; \
-             pass --agent-token / --extension-token (or use --gateway with \
-             a token file)",
+            "refusing to bind non-loopback {} without an extension token; \
+             pass --extension-token (required for the browser WebSocket interface \
+             when listening beyond loopback)",
             cfg.listen_ip
+        ));
+    }
+    if cfg.agent_port.is_some() && cfg.agent_token.is_none() {
+        return Err(anyhow::anyhow!(
+            "--agent-port {} requires --agent-token (remote CLI control plane \
+             must be authenticated)",
+            cfg.agent_port.unwrap_or_default()
         ));
     }
 
@@ -1051,6 +1059,12 @@ fn apply_start_args(cmd: &mut std::process::Command, args: &StartArgs) {
     }
     if args.gateway {
         cmd.arg("--gateway");
+    }
+    if let Some(t) = args.agent_token.as_ref() {
+        cmd.arg("--agent-token").arg(t);
+    }
+    if let Some(t) = args.extension_token.as_ref() {
+        cmd.arg("--extension-token").arg(t);
     }
     if let Some(d) = args.session_idle {
         cmd.arg("--session-idle").arg(format_duration(d));

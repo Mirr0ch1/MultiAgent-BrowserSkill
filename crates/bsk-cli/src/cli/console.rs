@@ -1,6 +1,5 @@
 //! `bsk console` — read buffered page console/log/exception messages.
 
-use std::path::PathBuf;
 
 use anyhow::Context;
 use bsk_protocol::Method;
@@ -8,7 +7,7 @@ use bsk_protocol::tools::{ConsoleEntry, ConsoleParams, ConsoleResult};
 use clap::Args;
 
 use crate::cli::TOOL_IPC_TIMEOUT;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Args)]
@@ -39,11 +38,11 @@ pub struct ConsoleArgs {
 }
 
 pub fn dispatch(args: ConsoleArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    run(info.sock_path, args, format)
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    run(&endpoint, args, format)
 }
 
-fn run(sock: PathBuf, args: ConsoleArgs, format: Format) -> Result<(), CliError> {
+fn run(endpoint: &Endpoint, args: ConsoleArgs, format: Format) -> Result<(), CliError> {
     let params = ConsoleParams {
         session_id: args.session,
         tab_id: args.tab_id,
@@ -52,13 +51,13 @@ fn run(sock: PathBuf, args: ConsoleArgs, format: Format) -> Result<(), CliError>
         max_text_chars: args.max_text_chars,
         include_stack: args.include_stack.then_some(true),
     };
-    let reply: ConsoleResult = call(sock, params)?;
+    let reply: ConsoleResult = call(endpoint, params)?;
     render(&reply, format)
 }
 
-fn call(sock: PathBuf, params: ConsoleParams) -> Result<ConsoleResult, CliError> {
+fn call(endpoint: &Endpoint, params: ConsoleParams) -> Result<ConsoleResult, CliError> {
     crate::cli::business_rpc::call::<ConsoleParams, ConsoleResult>(
-        sock,
+        endpoint,
         "console",
         Method::ToolConsole,
         Some(params),

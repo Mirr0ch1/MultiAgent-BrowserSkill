@@ -3,7 +3,6 @@
 //! the extension via the session queue; `wait-ms` is answered entirely
 //! by the daemon (no extension involvement; no session needed).
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -14,7 +13,7 @@ use bsk_protocol::tools::{
 use clap::Args;
 
 use crate::cli::dialogs::print_dialog_summaries;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 use crate::cli::navigate::{CliWaitUntil, parse_timeout_ms};
 
@@ -44,24 +43,24 @@ pub fn dispatch_wait_for_navigation(
     args: WaitForNavigationArgs,
     format: Format,
 ) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let params = WaitForNavigationParams {
         session_id: args.session,
         tab_id: args.tab_id,
         wait_until: Some(args.wait_until.into()),
         timeout_ms: Some(args.timeout),
     };
-    let reply = call_wait_for_navigation(info.sock_path, params, args.timeout)?;
+    let reply = call_wait_for_navigation(&endpoint, params, args.timeout)?;
     render_wait_for_navigation(&reply, format)
 }
 
 fn call_wait_for_navigation(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     params: WaitForNavigationParams,
     timeout_ms: u32,
 ) -> Result<WaitForNavigationResult, CliError> {
     crate::cli::business_rpc::call::<WaitForNavigationParams, WaitForNavigationResult>(
-        sock,
+        endpoint,
         "wait-nav",
         Method::ToolWaitForNavigation,
         Some(params),
@@ -136,16 +135,16 @@ fn parse_duration_ms(arg: &str) -> Result<u64, String> {
 }
 
 pub fn dispatch_wait_ms(args: WaitMsArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let params = WaitMsParams {
         duration_ms: args.duration,
     };
-    let reply = call_wait_ms(info.sock_path, params, args.duration)?;
+    let reply = call_wait_ms(&endpoint, params, args.duration)?;
     render_wait_ms(&reply, format)
 }
 
 fn call_wait_ms(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     params: WaitMsParams,
     duration_ms: u64,
 ) -> Result<WaitMsResult, CliError> {
@@ -156,7 +155,7 @@ fn call_wait_ms(
         .checked_add(Duration::from_secs(15))
         .unwrap_or(Duration::from_secs(30));
     crate::cli::business_rpc::call::<WaitMsParams, WaitMsResult>(
-        sock,
+        endpoint,
         "wait-ms",
         Method::ToolWaitMs,
         Some(params),

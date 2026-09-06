@@ -8,7 +8,7 @@ use bsk_protocol::{Method, StatusParams, StatusResult};
 use crate::cli::browser_wait::{
     browser_connect_wait, browser_query_ipc_timeout, wait_for_browser_ms,
 };
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::CliError;
 
 /// Output format selector.
@@ -21,9 +21,9 @@ pub enum Output {
 /// Run `bsk status`. Returns the result so callers (tests, doctor) can
 /// reuse it.
 pub fn run(output: Output) -> Result<StatusResult, CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let wait = browser_connect_wait();
-    let result = query_sock_with_wait(info.sock_path, wait)?;
+    let result = query_sock_with_wait(&endpoint, wait)?;
     match output {
         Output::Human => render_human(&result),
         Output::Json => render_json(&result).map_err(CliError::Local)?,
@@ -32,7 +32,7 @@ pub fn run(output: Output) -> Result<StatusResult, CliError> {
 }
 
 pub(crate) fn query_sock_with_wait(
-    sock: std::path::PathBuf,
+    endpoint: &Endpoint,
     wait: Duration,
 ) -> Result<StatusResult, CliError> {
     let params = StatusParams {
@@ -45,9 +45,9 @@ pub(crate) fn query_sock_with_wait(
         .context("build tokio runtime for status")
         .map_err(CliError::Local)?;
     rt.block_on(async move {
-        let mut client = crate::ipc_client::Client::connect_path(sock).await?;
+        let mut client = crate::ipc_client::AnyClient::connect(endpoint).await?;
         let outcome = client
-            .call::<_, StatusResult>(Method::SystemStatus, &params, timeout)
+            .call::<_, StatusResult>("status", Method::SystemStatus, Some(params), timeout)
             .await?;
         outcome.map_err(CliError::from_rpc)
     })
@@ -91,7 +91,7 @@ fn render_human(s: &StatusResult) {
         ("pid", s.pid.to_string()),
         ("uptime", format_uptime(s.uptime_secs)),
         ("WS port", s.ws_port.to_string()),
-        ("sock", s.sock_path.clone()),
+        ("endpoint", s.sock_path.clone()),
         ("browsers connected", s.browsers.len().to_string()),
         ("active sessions", s.sessions.len().to_string()),
     ];

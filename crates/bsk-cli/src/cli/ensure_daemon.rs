@@ -20,6 +20,45 @@ use crate::daemon::info::{self, DaemonInfo};
 /// Maximum time to wait for an auto-spawned daemon to become ready.
 pub const SPAWN_DEADLINE: Duration = Duration::from_millis(3_000);
 
+/// Where a business command should talk to: the local daemon over UDS,
+/// or a remote gateway daemon over TCP IPC (P0 audit fix — remote CLI
+/// was wired to nothing).
+#[derive(Debug, Clone)]
+pub enum Endpoint {
+    /// Local daemon over the UDS socket written into `daemon.json`.
+    Local { sock_path: PathBuf },
+    /// Remote gateway daemon over TCP IPC (`--host/--port`, token auth).
+    Remote {
+        host: std::net::IpAddr,
+        port: u16,
+        token: Option<String>,
+    },
+}
+
+/// Resolve the CLI endpoint for business subcommands.
+///
+/// Remote mode (`--host` given) returns a [`Endpoint::Remote`]
+/// short-circuiting auto-spawn entirely — the local daemon must never
+/// be silently started when the user explicitly targeted a gateway
+/// (P0). Local mode keeps the upstream `ensure_daemon()` flow.
+pub fn resolve_endpoint() -> Result<Endpoint> {
+    let flags = crate::cli::global_flags();
+    if flags.is_remote() {
+        let port = flags.port.ok_or_else(|| {
+            anyhow::anyhow!("remote gateway mode requires --port (TCP IPC port) with --host")
+        })?;
+        return Ok(Endpoint::Remote {
+            host: flags.host.expect("is_remote implies host"),
+            port,
+            token: flags.resolved_agent_token(),
+        });
+    }
+    let info = ensure_daemon()?;
+    Ok(Endpoint::Local {
+        sock_path: info.sock_path,
+    })
+}
+
 /// Read `daemon.json` if it's valid; spawn the daemon otherwise. Returns
 /// the connection handle the caller should use.
 ///

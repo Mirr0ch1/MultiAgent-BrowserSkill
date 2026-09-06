@@ -393,6 +393,94 @@ fn random_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Unified CLI-side IPC client: local UDS/named-pipe, or remote TCP IPC
+/// (gateway mode). `resolve_endpoint()` picks the transport; `connect`
+/// yields the right concrete client behind a common `call` surface so
+/// business commands work identically in both modes (P0 audit fix).
+pub enum AnyClient {
+    /// Local UDS / named-pipe client.
+    Local(IpcClient),
+    /// Remote gateway TCP client (authenticated first-frame handshake).
+    Remote(tcp::TcpClient),
+}
+
+impl AnyClient {
+    /// Connect to the endpoint resolved from global flags
+    /// (`resolve_endpoint()` in `cli::ensure_daemon`).
+    pub async fn connect(endpoint: &crate::cli::ensure_daemon::Endpoint) -> anyhow::Result<Self> {
+        match endpoint {
+            crate::cli::ensure_daemon::Endpoint::Local { sock_path } => {
+                let client = IpcClient::connect(sock_path).await?;
+                Ok(Self::Local(client))
+            }
+            crate::cli::ensure_daemon::Endpoint::Remote { host, port, token } => {
+                let client = tcp::TcpClient::connect(*host, *port, token.as_deref()).await?;
+                Ok(Self::Remote(client))
+            }
+        }
+    }
+
+    /// Issue a typed RPC over whichever transport this client wraps.
+    pub async fn call<P, R>(
+        &mut self,
+        id: impl Into<bsk_protocol::RpcId>,
+        method: bsk_protocol::Method,
+        params: Option<P>,
+        call_timeout: std::time::Duration,
+    ) -> anyhow::Result<std::result::Result<R, RpcError>>
+    where
+        P: serde::Serialize,
+        R: serde::de::DeserializeOwned,
+    {
+        let id = id.into();
+        match self {
+            Self::Local(client) => client.call(id, method, params, call_timeout).await,
+            Self::Remote(client) => match params {
+                Some(params) => {
+                    client
+                        .call::<P, R>(method, &params, call_timeout)
+                        .await
+                }
+                None => client.call::<(), R>(method, &(), call_timeout).await,
+            },
+        }
+    }
+
+    /// Issue a typed RPC with a pinned wire correlation id.
+    pub async fn call_with_id<P, R>(
+        &mut self,
+        id: impl Into<bsk_protocol::RpcId>,
+        method: bsk_protocol::Method,
+        params: Option<P>,
+        call_timeout: std::time::Duration,
+    ) -> anyhow::Result<std::result::Result<R, RpcError>>
+    where
+        P: serde::Serialize,
+        R: serde::de::DeserializeOwned,
+    {
+        let id = id.into();
+        match self {
+            Self::Local(client) => {
+                client
+                    .call_with_id(id, method, params, call_timeout)
+                    .await
+            }
+            Self::Remote(client) => match params {
+                Some(params) => {
+                    client
+                        .call_with_id::<P, R>(id.clone(), method, &params, call_timeout)
+                        .await
+                }
+                None => {
+                    client
+                        .call_with_id::<(), R>(id, method, &(), call_timeout)
+                        .await
+                }
+            },
+        }
+    }
+}
+
 /// Cross-platform TCP IPC client (gateway remote CLI peers).
 ///
 /// Unlike the local UDS / named-pipe [`Client`], the TCP transport is

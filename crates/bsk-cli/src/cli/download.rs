@@ -16,7 +16,7 @@ use clap::Args;
 use uuid::Uuid;
 
 use crate::cli::atomic_output;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 use crate::cli::interaction::split_target;
 use crate::cli::navigate::parse_timeout_ms;
@@ -48,7 +48,7 @@ pub fn dispatch(args: DownloadArgs, format: Format) -> Result<(), CliError> {
             args.out.display()
         )));
     }
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let (ref_, selector) = split_target(args.target, args.ref_, args.selector)?;
     let params = DownloadParams {
         session_id: args.session,
@@ -60,7 +60,7 @@ pub fn dispatch(args: DownloadArgs, format: Format) -> Result<(), CliError> {
         max_byte_size: None,
     };
     let reply: DownloadResult = crate::cli::business_rpc::call(
-        info.sock_path.clone(),
+        &endpoint,
         "download",
         Method::ToolDownload,
         Some(params),
@@ -69,9 +69,9 @@ pub fn dispatch(args: DownloadArgs, format: Format) -> Result<(), CliError> {
     let transfer_id = reply.transfer_id.clone().ok_or_else(|| {
         CliError::Local(anyhow::anyhow!("daemon returned no download transfer id"))
     })?;
-    let write_result = write_transfer(&info.sock_path, &transfer_id, &args.out, args.overwrite);
+    let write_result = write_transfer(&&endpoint, &transfer_id, &args.out, args.overwrite);
     let _: Result<TransferReleaseResult, CliError> = crate::cli::business_rpc::call(
-        info.sock_path,
+        &endpoint,
         "transfer-release",
         Method::TransferRelease,
         Some(TransferIdParams { transfer_id }),
@@ -93,7 +93,7 @@ pub fn dispatch(args: DownloadArgs, format: Format) -> Result<(), CliError> {
     Ok(())
 }
 
-fn write_transfer(sock: &Path, id: &str, out: &Path, overwrite: bool) -> Result<(), CliError> {
+fn write_transfer(endpoint: &Endpoint, id: &str, out: &Path, overwrite: bool) -> Result<(), CliError> {
     let parent = out
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -109,7 +109,7 @@ fn write_transfer(sock: &Path, id: &str, out: &Path, overwrite: bool) -> Result<
         let mut offset = 0u64;
         loop {
             let chunk: TransferChunkResult = crate::cli::business_rpc::call(
-                sock.to_path_buf(),
+                endpoint,
                 "transfer-read",
                 Method::TransferRead,
                 Some(TransferChunkParams {

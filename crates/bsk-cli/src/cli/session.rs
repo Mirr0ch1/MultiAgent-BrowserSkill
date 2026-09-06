@@ -5,7 +5,6 @@
 //! human-readable by default; pass the global `--json` flag to get
 //! structured JSON instead.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -17,7 +16,7 @@ use bsk_protocol::{ErrorCode, Method};
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{self, CliError, Format, RenderExtras};
 use crate::daemon::browsers::EXTENSION_CONNECT_WAIT;
 
@@ -157,18 +156,18 @@ struct ListReply {
 }
 
 pub fn dispatch(cmd: SessionCmd, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     match cmd.sub {
         SessionSub::Start(args) => {
             run_skill_sync_for_session_start(format);
-            run_start(info.sock_path, args, format)
+            run_start(&endpoint, args, format)
         }
-        SessionSub::Stop(args) => run_stop(info.sock_path, args, format),
-        SessionSub::List => run_list(info.sock_path, format),
+        SessionSub::Stop(args) => run_stop(&endpoint, args, format),
+        SessionSub::List => run_list(&endpoint, format),
     }
 }
 
-fn run_start(sock: PathBuf, args: SessionStartArgs, format: Format) -> Result<(), CliError> {
+fn run_start(endpoint: &Endpoint, args: SessionStartArgs, format: Format) -> Result<(), CliError> {
     if args.width.is_some() != args.height.is_some() {
         return Err(CliError::Local(anyhow::anyhow!(
             "--width and --height must be given together"
@@ -191,7 +190,7 @@ fn run_start(sock: PathBuf, args: SessionStartArgs, format: Format) -> Result<()
         });
     }
     let result = start_session(
-        sock,
+        endpoint,
         SessionStartOptions {
             browser: args.browser,
             width: args.width,
@@ -237,9 +236,9 @@ pub struct SessionStartOptions {
 }
 
 /// Start a session and open the Agent Window. Used by `session start` and `record start`.
-pub fn start_session(sock: PathBuf, opts: SessionStartOptions) -> Result<StartReply, CliError> {
+pub fn start_session(endpoint: &Endpoint, opts: SessionStartOptions) -> Result<StartReply, CliError> {
     call(
-        sock,
+        endpoint,
         Method::SessionStart,
         Some(StartParams {
             browser_instance_id: opts.browser,
@@ -256,9 +255,9 @@ pub fn start_session(sock: PathBuf, opts: SessionStartOptions) -> Result<StartRe
 }
 
 /// Stop a single session by id.
-pub fn stop_session(sock: PathBuf, session_id: &str) -> Result<StopReply, CliError> {
+pub fn stop_session(endpoint: &Endpoint, session_id: &str) -> Result<StopReply, CliError> {
     call(
-        sock,
+        endpoint,
         Method::SessionStop,
         Some(StopParams {
             session_id: Some(session_id.to_string()),
@@ -414,14 +413,14 @@ fn write_browser_table(
     Ok(())
 }
 
-fn run_stop(sock: PathBuf, args: SessionStopArgs, format: Format) -> Result<(), CliError> {
+fn run_stop(endpoint: &Endpoint, args: SessionStopArgs, format: Format) -> Result<(), CliError> {
     if !args.all && args.session_id.is_none() {
         return Err(CliError::Local(anyhow::anyhow!(
             "session stop requires SESSION_ID or --all"
         )));
     }
     let reply: StopReply = call(
-        sock,
+        endpoint,
         Method::SessionStop,
         Some(StopParams {
             session_id: args.session_id,
@@ -477,8 +476,8 @@ fn run_stop(sock: PathBuf, args: SessionStopArgs, format: Format) -> Result<(), 
     Ok(())
 }
 
-fn run_list(sock: PathBuf, format: Format) -> Result<(), CliError> {
-    let reply: ListReply = call::<(), _>(sock, Method::SessionList, None, Duration::from_secs(5))?;
+fn run_list(endpoint: &Endpoint, format: Format) -> Result<(), CliError> {
+    let reply: ListReply = call::<(), _>(endpoint, Method::SessionList, None, Duration::from_secs(5))?;
     match format {
         Format::Json => {
             println!(
@@ -527,7 +526,7 @@ fn run_list(sock: PathBuf, format: Format) -> Result<(), CliError> {
 }
 
 fn call<P, R>(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     method: Method,
     params: Option<P>,
     timeout: Duration,
@@ -536,7 +535,7 @@ where
     P: serde::Serialize + Send + 'static,
     R: serde::de::DeserializeOwned + Send + 'static,
 {
-    crate::cli::business_rpc::call::<P, R>(sock, "session", method, params, timeout)
+    crate::cli::business_rpc::call::<P, R>(endpoint, "session", method, params, timeout)
 }
 
 /// Best-effort: bring installed agent skills up to date with the

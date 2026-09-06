@@ -1,6 +1,5 @@
 //! `bsk network` — read buffered page network responses / failures.
 
-use std::path::PathBuf;
 
 use anyhow::Context;
 use bsk_protocol::Method;
@@ -8,7 +7,7 @@ use bsk_protocol::tools::{NetworkEntry, NetworkParams, NetworkResult};
 use clap::Args;
 
 use crate::cli::TOOL_IPC_TIMEOUT;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 #[derive(Debug, Clone, Args)]
@@ -35,11 +34,11 @@ pub struct NetworkArgs {
 }
 
 pub fn dispatch(args: NetworkArgs, format: Format) -> Result<(), CliError> {
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    run(info.sock_path, args, format)
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    run(&endpoint, args, format)
 }
 
-fn run(sock: PathBuf, args: NetworkArgs, format: Format) -> Result<(), CliError> {
+fn run(endpoint: &Endpoint, args: NetworkArgs, format: Format) -> Result<(), CliError> {
     let params = NetworkParams {
         session_id: args.session,
         tab_id: args.tab_id,
@@ -47,13 +46,13 @@ fn run(sock: PathBuf, args: NetworkArgs, format: Format) -> Result<(), CliError>
         limit: args.limit,
         max_text_chars: args.max_text_chars,
     };
-    let reply: NetworkResult = call(sock, params)?;
+    let reply: NetworkResult = call(endpoint, params)?;
     render(&reply, format)
 }
 
-fn call(sock: PathBuf, params: NetworkParams) -> Result<NetworkResult, CliError> {
+fn call(endpoint: &Endpoint, params: NetworkParams) -> Result<NetworkResult, CliError> {
     crate::cli::business_rpc::call::<NetworkParams, NetworkResult>(
-        sock,
+        endpoint,
         "network",
         Method::ToolNetwork,
         Some(params),

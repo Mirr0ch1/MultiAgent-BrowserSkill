@@ -209,7 +209,10 @@ fn current_state(browser_wait: Duration) -> DaemonState {
     if !crate::daemon::lockfile::pid_alive(info.pid) {
         return DaemonState::StaleDead(info);
     }
-    match status::query_sock_with_wait(info.sock_path.clone(), browser_wait) {
+    let endpoint = crate::cli::ensure_daemon::Endpoint::Local {
+        sock_path: info.sock_path.clone(),
+    };
+    match status::query_sock_with_wait(&endpoint, browser_wait) {
         Ok(status) => {
             if status.pid == info.pid {
                 DaemonState::Verified { status }

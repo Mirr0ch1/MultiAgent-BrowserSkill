@@ -2,7 +2,6 @@
 //! step (captcha / login / confirmation). Blocks until the user acts in
 //! the browser overlay or the call times out.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -12,7 +11,7 @@ use bsk_protocol::tools::{
 };
 use clap::Args;
 
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 use crate::cli::navigate::parse_timeout_ms;
 
@@ -109,7 +108,7 @@ pub fn dispatch(args: RequestHelpArgs, format: Format) -> Result<(), CliError> {
         };
         return render(&result, format);
     }
-    let info = ensure_daemon().context("ensure daemon is running")?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
     let targets: Vec<HelpTarget> = args.target.iter().map(|t| parse_target(t)).collect();
     let completion_criteria = args
         .completion_criteria
@@ -130,17 +129,17 @@ pub fn dispatch(args: RequestHelpArgs, format: Format) -> Result<(), CliError> {
         completion_criteria,
         timeout_ms: Some(args.timeout),
     };
-    let reply = call(info.sock_path, params, args.timeout)?;
+    let reply = call(&endpoint, params, args.timeout)?;
     render(&reply, format)
 }
 
 fn call(
-    sock: PathBuf,
+    endpoint: &Endpoint,
     params: RequestHelpParams,
     timeout_ms: u32,
 ) -> Result<RequestHelpResult, CliError> {
     crate::cli::business_rpc::call::<RequestHelpParams, RequestHelpResult>(
-        sock,
+        endpoint,
         "request-help",
         Method::ToolRequestHelp,
         Some(params),

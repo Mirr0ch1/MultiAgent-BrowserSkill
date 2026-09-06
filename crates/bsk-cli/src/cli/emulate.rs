@@ -6,7 +6,6 @@
 //! executes the concrete override parameters it receives, so presets are
 //! not duplicated in TypeScript.
 
-use std::path::PathBuf;
 
 use anyhow::Context;
 use bsk_protocol::tools::{EmulateOverrides, EmulateParams, EmulateResult};
@@ -14,7 +13,7 @@ use bsk_protocol::{ErrorCode, Method, RpcError};
 use clap::Args;
 
 use crate::cli::TOOL_IPC_TIMEOUT;
-use crate::cli::ensure_daemon::ensure_daemon;
+use crate::cli::ensure_daemon::{Endpoint, resolve_endpoint};
 use crate::cli::error::{CliError, Format};
 
 /// One built-in device preset: viewport metrics + UA + touch applied in
@@ -355,14 +354,14 @@ pub fn build_params(args: &EmulateArgs) -> Result<EmulateParams, CliError> {
 pub fn dispatch(args: EmulateArgs, format: Format) -> Result<(), CliError> {
     let device = args.device.clone();
     let params = build_params(&args)?;
-    let info = ensure_daemon().context("ensure daemon is running")?;
-    let reply = call(info.sock_path, params)?;
+    let endpoint = resolve_endpoint().context("resolve daemon endpoint")?;
+    let reply = call(&endpoint, params)?;
     render(&reply, device.as_deref(), format)
 }
 
-fn call(sock: PathBuf, params: EmulateParams) -> Result<EmulateResult, CliError> {
+fn call(endpoint: &Endpoint, params: EmulateParams) -> Result<EmulateResult, CliError> {
     crate::cli::business_rpc::call::<EmulateParams, EmulateResult>(
-        sock,
+        endpoint,
         "emulate",
         Method::ToolEmulate,
         Some(params),
