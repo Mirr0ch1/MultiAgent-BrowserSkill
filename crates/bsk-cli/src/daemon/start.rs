@@ -11,7 +11,7 @@
 //! startup, redirects stdio to `/dev/null`, calls `setsid` (Unix), and
 //! falls through to `run_foreground`.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -44,8 +44,15 @@ pub(crate) const DAEMON_REPLACEMENT_WAIT_ENV: &str = "BSK_DAEMON_REPLACES_PID";
 #[derive(Debug, Clone)]
 pub struct DaemonConfig {
     pub ws_port: u16,
+    /// WS listen address. Loopback by default; LAN/Tailscale IP in
+    /// gateway mode.
+    pub listen_ip: std::net::IpAddr,
+    /// TCP IPC port for remote CLI peers. `None` keeps the upstream
+    /// behaviour (UDS / named pipe only).
+    pub agent_port: Option<u16>,
     pub session_idle: Duration,
-    pub daemon_idle: Duration,
+    /// `None` disables idle self-shutdown (gateway mode: permanent).
+    pub daemon_idle: Option<Duration>,
     /// Skip the Origin allow-list (tests / `--insecure-origin`).
     pub allow_any_origin: bool,
     /// How long `session.start` polls for an extension handshake before
@@ -57,6 +64,10 @@ pub struct DaemonConfig {
     /// How often the liveness task scans the registry. Defaults to
     /// [`BROWSER_LIVENESS_TICK`].
     pub browser_liveness_tick: Duration,
+    /// Gateway lock: `Some(true)` when `--gateway` was passed, meaning
+    /// non-loopback binds require a configured token and idle/
+    /// auto-spawn/auto-update are disabled.
+    pub gateway_mode: bool,
 }
 
 impl DaemonConfig {
@@ -66,12 +77,15 @@ impl DaemonConfig {
     pub fn new(port: u16) -> Self {
         Self {
             ws_port: port,
+            listen_ip: crate::cli::daemon::DEFAULT_WS_LISTEN,
+            agent_port: None,
             session_idle: Duration::from_secs(60 * 5),
-            daemon_idle: Duration::from_secs(60 * 30),
+            daemon_idle: Some(Duration::from_secs(60 * 30)),
             allow_any_origin: false,
             extension_connect_wait: EXTENSION_CONNECT_WAIT,
             browser_liveness_timeout: BROWSER_LIVENESS_TIMEOUT,
             browser_liveness_tick: BROWSER_LIVENESS_TICK,
+            gateway_mode: false,
         }
     }
 
@@ -94,12 +108,15 @@ impl From<&StartArgs> for DaemonConfig {
     fn from(args: &StartArgs) -> Self {
         Self {
             ws_port: args.resolved_port(),
+            listen_ip: args.resolved_listen(),
+            agent_port: args.agent_port,
             session_idle: args.resolved_session_idle(),
             daemon_idle: args.resolved_daemon_idle(),
             allow_any_origin: false,
             extension_connect_wait: EXTENSION_CONNECT_WAIT,
             browser_liveness_timeout: BROWSER_LIVENESS_TIMEOUT,
             browser_liveness_tick: BROWSER_LIVENESS_TICK,
+            gateway_mode: args.gateway,
         }
     }
 }
@@ -237,7 +254,7 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
         let restart_notify = Arc::new(tokio::sync::Notify::new());
         let update_check_task =
             spawn_update_check_task(Arc::clone(&state), Arc::clone(&restart_notify));
-        let ws_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), cfg.ws_port);
+        let ws_addr = SocketAddr::new(cfg.listen_ip, cfg.ws_port);
         let ws_handle = ws::WsServer::new(Arc::clone(&state))
             .bind(ws_addr)
             .await
@@ -344,6 +361,11 @@ pub fn run_foreground(cfg: DaemonConfig) -> Result<()> {
             let state = Arc::clone(&state);
             let daemon_idle = cfg.daemon_idle;
             tokio::spawn(async move {
+                // Gateway mode disables idle shutdown entirely (daemon_idle = None).
+                let Some(daemon_idle) = daemon_idle else {
+                    std::future::pending::<()>().await;
+                    return None;
+                };
                 let tick = (daemon_idle / 4).max(Duration::from_millis(250));
                 let mut ticker = tokio::time::interval(tick);
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -675,9 +697,12 @@ pub(crate) fn spawn_update_check_task(
 fn restart_start_args(cfg: &DaemonConfig) -> StartArgs {
     StartArgs {
         port: Some(cfg.ws_port),
+        listen: Some(cfg.listen_ip),
+        agent_port: cfg.agent_port,
+        gateway: cfg.gateway_mode,
         foreground: false,
         session_idle: Some(cfg.session_idle),
-        daemon_idle: Some(cfg.daemon_idle),
+        daemon_idle: cfg.daemon_idle,
     }
 }
 
@@ -936,6 +961,15 @@ fn apply_start_args(cmd: &mut std::process::Command, args: &StartArgs) {
     if let Some(p) = args.port {
         cmd.arg("--port").arg(p.to_string());
     }
+    if let Some(ip) = args.listen {
+        cmd.arg("--listen").arg(ip.to_string());
+    }
+    if let Some(p) = args.agent_port {
+        cmd.arg("--agent-port").arg(p.to_string());
+    }
+    if args.gateway {
+        cmd.arg("--gateway");
+    }
     if let Some(d) = args.session_idle {
         cmd.arg("--session-idle").arg(format_duration(d));
     }
@@ -1103,7 +1137,7 @@ mod tests {
         let cfg = DaemonConfig {
             ws_port: 1234,
             session_idle: Duration::from_secs(11),
-            daemon_idle: Duration::from_secs(22),
+            daemon_idle: Some(Duration::from_secs(22)),
             ..DaemonConfig::new(0)
         };
         let args = restart_start_args(&cfg);

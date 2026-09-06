@@ -71,7 +71,7 @@ fn parses_daemon_start_with_defaults() {
     assert!(args.port.is_none());
     assert!(!args.foreground);
     assert_eq!(args.resolved_port(), 52800);
-    assert_eq!(args.resolved_daemon_idle(), Duration::from_secs(600));
+    assert_eq!(args.resolved_daemon_idle(), Some(Duration::from_secs(600)));
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn parses_daemon_start_with_flags() {
     };
     assert!(args.foreground);
     assert_eq!(args.resolved_port(), 52900);
-    assert_eq!(args.resolved_daemon_idle(), Duration::from_secs(2));
+    assert_eq!(args.resolved_daemon_idle(), Some(Duration::from_secs(2)));
     assert_eq!(args.resolved_session_idle(), Duration::from_secs(30));
 }
 

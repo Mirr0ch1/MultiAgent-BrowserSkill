@@ -1,5 +1,6 @@
 //! `bsk daemon …` subcommand surface.
 
+use std::net::IpAddr;
 use std::time::Duration;
 
 use clap::Subcommand;
@@ -12,6 +13,8 @@ pub const DEFAULT_WS_PORT: u16 = 52800;
 pub const DEFAULT_DAEMON_IDLE: Duration = Duration::from_secs(10 * 60);
 /// Default session idle timeout (5 minutes per design §5).
 pub const DEFAULT_SESSION_IDLE: Duration = Duration::from_secs(5 * 60);
+/// Default WebSocket listen address (loopback only, matches upstream).
+pub const DEFAULT_WS_LISTEN: IpAddr = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
 
 #[derive(Debug, Subcommand)]
 pub enum DaemonCmd {
@@ -31,6 +34,24 @@ pub struct StartArgs {
     #[arg(long, value_name = "PORT")]
     pub port: Option<u16>,
 
+    /// WebSocket listen address (default 127.0.0.1). Use a LAN/Tailscale
+    /// IP for gateway mode.
+    #[arg(long, value_name = "IP")]
+    pub listen: Option<IpAddr>,
+
+    /// TCP IPC port for remote CLI peers (default: disabled). When set,
+    /// the daemon also accepts the bsk line protocol over TCP on this port.
+    #[arg(long, value_name = "PORT")]
+    pub agent_port: Option<u16>,
+
+    /// Gateway mode: aggregate switch that (1) defaults listen to the
+    /// LAN/Tailscale interface IP, (2) refuses non-loopback binds without
+    /// a configured token, (3) disables daemon idle shutdown,
+    /// (4) disables CLI auto-spawn for remote peers, (5) disables
+    /// auto-update. Never split into per-feature flags.
+    #[arg(long)]
+    pub gateway: bool,
+
     /// Run in the foreground (do not double-fork). Useful for development.
     #[arg(long)]
     pub foreground: bool,
@@ -49,12 +70,21 @@ impl StartArgs {
         self.port.unwrap_or(DEFAULT_WS_PORT)
     }
 
+    pub fn resolved_listen(&self) -> IpAddr {
+        self.listen.unwrap_or(DEFAULT_WS_LISTEN)
+    }
+
     pub fn resolved_session_idle(&self) -> Duration {
         self.session_idle.unwrap_or(DEFAULT_SESSION_IDLE)
     }
 
-    pub fn resolved_daemon_idle(&self) -> Duration {
-        self.daemon_idle.unwrap_or(DEFAULT_DAEMON_IDLE)
+    pub fn resolved_daemon_idle(&self) -> Option<Duration> {
+        if self.gateway {
+            // Gateway daemons are permanent: no idle self-shutdown.
+            None
+        } else {
+            Some(self.daemon_idle.unwrap_or(DEFAULT_DAEMON_IDLE))
+        }
     }
 }
 
