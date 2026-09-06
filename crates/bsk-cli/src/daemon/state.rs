@@ -10,6 +10,7 @@ use super::browsers::BrowserRegistry;
 use super::file_transfer::TransferRegistry;
 use super::inflight::ToolInflightRegistry;
 use super::ipc::IpcHandle;
+use super::ipc::tcp::TcpIpcHandle;
 use super::queue::ToolQueueRegistry;
 use super::session_interrupt::SessionInterruptRegistry;
 use super::sessions::SessionRegistry;
@@ -87,6 +88,7 @@ pub struct DaemonHandle {
     state: Arc<DaemonState>,
     ws: WsHandle,
     ipc: Option<IpcHandle>,
+    tcp: Option<TcpIpcHandle>,
     session_idle_task: JoinHandle<()>,
     browser_liveness_task: JoinHandle<()>,
 }
@@ -96,6 +98,7 @@ impl DaemonHandle {
         state: Arc<DaemonState>,
         ws: WsHandle,
         ipc: Option<IpcHandle>,
+        tcp: Option<TcpIpcHandle>,
         session_idle_task: JoinHandle<()>,
         browser_liveness_task: JoinHandle<()>,
     ) -> Self {
@@ -103,6 +106,7 @@ impl DaemonHandle {
             state,
             ws,
             ipc,
+            tcp,
             session_idle_task,
             browser_liveness_task,
         }
@@ -120,6 +124,10 @@ impl DaemonHandle {
         self.ipc.as_ref()
     }
 
+    pub fn tcp_addr(&self) -> Option<SocketAddr> {
+        self.tcp.as_ref().map(|t| t.addr)
+    }
+
     /// Stop the WS server (and IPC if running). Returns once both join
     /// handles complete.
     pub async fn shutdown(self) {
@@ -132,6 +140,10 @@ impl DaemonHandle {
         if let Some(ipc) = self.ipc {
             ipc.shutdown.notify_waiters();
             let _ = await_join(ipc.task).await;
+        }
+        if let Some(tcp) = self.tcp {
+            tcp.shutdown.notify_waiters();
+            let _ = await_join(tcp.task).await;
         }
     }
 }

@@ -1497,6 +1497,8 @@ pub(crate) mod tcp {
     use serde_json::Value;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::Notify;
+    use tokio::task::JoinHandle;
     use tracing::{debug, info, warn};
 
     use super::RpcHandler;
@@ -1696,6 +1698,47 @@ pub(crate) mod tcp {
         } else {
             Err((id, "tcp ipc handshake failed: invalid token".into()))
         }
+    }
+
+    /// Owning handle around a spawned TCP IPC accept loop. Returned by
+    /// [`bind_server`]; used to wait for / shut down the task.
+    pub struct TcpIpcHandle {
+        pub addr: SocketAddr,
+        pub shutdown: Arc<Notify>,
+        pub task: JoinHandle<()>,
+    }
+
+    /// Bind `addr` and spawn the TCP IPC accept loop. `expected_token =
+    /// Some(t)` requires every connection to authenticate with a
+    /// first-frame `system.handshake`; `None` refuses all connections
+    /// (network-exposed transport requires a token).
+    pub async fn bind_server(
+        addr: SocketAddr,
+        handler: RpcHandler,
+        expected_token: Option<String>,
+    ) -> Result<TcpIpcHandle> {
+        let listener = bind(addr).await?;
+        // If `addr` used port 0 (tests), capture the OS-assigned port so
+        // callers can connect to the real listener.
+        let bound_addr = listener.local_addr()?;
+        let shutdown = Arc::new(Notify::new());
+        let shutdown_signal = Arc::clone(&shutdown);
+        let task = tokio::spawn(serve(
+            listener,
+            handler,
+            expected_token,
+            || {},
+            || {},
+            || {},
+            async move {
+                shutdown_signal.notified().await;
+            },
+        ));
+        Ok(TcpIpcHandle {
+            addr: bound_addr,
+            shutdown,
+            task,
+        })
     }
 }
 

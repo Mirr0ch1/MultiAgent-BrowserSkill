@@ -41,8 +41,33 @@ pub async fn run(
     let state = Arc::new(DaemonState::new(config));
     let ws_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), ws_port);
     let ws_handle = ws::WsServer::new(Arc::clone(&state)).bind(ws_addr).await?;
+    // Clone before the match below consumes `ipc_socket`, so the TCP IPC
+    // status snapshot can still reference the socket path.
+    let sock_for_status = ipc_socket.clone().unwrap_or_default();
     let ipc_handle = match ipc_socket {
         Some(path) => Some(ipc::IpcServer::new(Arc::clone(&state)).bind(path).await?),
+        None => None,
+    };
+    // TCP IPC (gateway remote CLI peers). Spawned only when
+    // `--agent-port` is set; every connection must authenticate with a
+    // first-frame `system.handshake` carrying `agent_token`.
+    let tcp_handle = match state.config.agent_port {
+        Some(port) => {
+            let tcp_addr = SocketAddr::new(state.config.listen_ip, port);
+            let started_at = std::time::Instant::now();
+            let status = ipc::DaemonStatus {
+                started_at,
+                ws_port: ws_handle.local_addr.port(),
+                sock_path: sock_for_status,
+                daemon_version: state::DAEMON_VERSION,
+                protocol_version: state::PROTOCOL_VERSION,
+            };
+            let handler = ipc::full_handler(status, Arc::clone(&state));
+            Some(
+                ipc::tcp::bind_server(tcp_addr, handler, state.config.agent_token.clone())
+                    .await?,
+            )
+        }
         None => None,
     };
     let session_idle_task = start::spawn_session_idle_reaper(Arc::clone(&state));
@@ -56,6 +81,7 @@ pub async fn run(
         state,
         ws_handle,
         ipc_handle,
+        tcp_handle,
         session_idle_task,
         browser_liveness_task,
     ))
