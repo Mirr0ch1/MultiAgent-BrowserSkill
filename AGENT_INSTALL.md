@@ -47,7 +47,7 @@ Then ask the user to:
 
 > Open `chrome://extensions` (or `edge://extensions`), enable **Developer
 > mode**, click **Load unpacked**, and select
-> `apps/extension/.output/chrome-mv3` in the repo. Open the popup and wait
+> `apps/extension/dist/chrome-mv3` in the repo. Open the popup and wait
 > until it turns green. Reply when done.
 
 Then run `bsk doctor` once more. All `ok`/`na` → tell the user it's ready.

@@ -149,7 +149,7 @@ pnpm build
 ```
 
 Then open `chrome://extensions` (or `edge://extensions`), enable **Developer
-mode**, choose **Load unpacked**, and select `apps/extension/.output/chrome-mv3`.
+mode**, choose **Load unpacked**, and select `apps/extension/dist/chrome-mv3`.
 
 #### 3. Install the skill into your agent harness
 

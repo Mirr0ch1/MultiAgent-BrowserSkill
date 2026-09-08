@@ -130,7 +130,7 @@ pnpm build
 ```
 
 然后打开 `chrome://extensions`（或 `edge://extensions`），开启**开发者模式**，选择
-**加载已解压的扩展程序**，选中 `apps/extension/.output/chrome-mv3`。
+**加载已解压的扩展程序**，选中 `apps/extension/dist/chrome-mv3`。
 
 #### 3. 把 skill 装进你的 Agent harness
 
