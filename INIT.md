@@ -106,7 +106,23 @@ fork 腾讯 BrowserSkill，把 bsk daemon 改造成**局域网网关/broker（�
 - [x] **P2+LAN 审计（GLM-5.3）→ `AUDIT-P2LAN-GLM53.md`**：主线全接通安全方向正确（cargo 7 + pnpm 846）；检出 F1（P1 Windows 构建破坏：if-addrs 放 unix-only deps 但 netdev 无条件引用 → 移入公共 [dependencies]）+ F2（::1 被拒 → ip_allowed 放行）+ F3（IPv4-mapped 拒绝 → 解映射）+ F4（已运行 daemon CIDR 漂移静默 → warn）+ F5（非法 CIDR 静默塌缩 → warn）+ N1/N2 记录在案；修复后 cargo 286 lib 全绿 + 集成全绿，扩展 846 全绿
 - [x] **开源发布（2026-09-07，commit e83f462 文档 + gh repo create）**：重写 README.md / README.zh-CN.md 为网关形态全量描述（多 Agent×多浏览器 LAN broker、token 双角色、协议 1.2、LAN CIDR 白名单、Busy+--share、互锁、远程 CLI、扩展端点可配置）+ AGENT_INSTALL 改源码构建引导 + install.sh/install.ps1 默认 BSK_REPO 改新仓库 + crates/bsk-cli/README 上游引用更新；`gh repo create Mirr0ch1/MultiAgent-BrowserSkill --public`（标准拼写，米罗原话 typo 已确认）→ https://github.com/Mirr0ch1/MultiAgent-BrowserSkill ；remote：origin=新仓库，upstream=Tencent/BrowserSkill；LICENSE 保留 MIT 上游版权
 - [x] **M5 完成（2026-09-09 实测，Mac 真机）**：① systemd 托管 gateway daemon（`bsk-gateway.service`，--gateway --listen 0.0.0.0 --agent-port 52901 --双token --4 CIDR，Restart=always 5s）；② 崩溃自愈实测（kill -9 → 8s 拉起，PID 轮换 2053010→2091984）；③ 本机三入口验证（127.0.0.1 / Tailscale IP / 错误 token 拒）；④ **Mac 真跨机注册**：米罗 Mac Chrome 152 装扩展（load unpacked + popup 配 ws://100.65.214.71:52800 + extension token）→ 网关 `bsk browsers` 见 instance 3befaeea（协议 1.2 / ext 0.2.0）✅；⑤ **断线重连 soak**：kill -9 网关后 systemd 自愈 + 扩展 t+10s 自动重连注册 ✅（验收最硬两条全过）；⑥ 三件套文档（docs/ops/systemd-gateway.md、firewall-ufw.md、rollback.md，commit 329fddb）+ README 构建路径纠正（67eae60）+ M5 记录（81775de）均推送；⚠️ us01 跨机 TCP 不通 = us01 网络环境问题（DERP 香港中继 hkg + exit-node nft 干扰），非 bsk 代码，待后续查
-- [ ] M5 收尾待办（可选）：Windows 真机（米罗方便时补）；us01 网络问题排查（DERP/直连）
+- [ ] M5 收尾待办（可选，暂停）：Windows 真机（米罗方便时补）；us01 网络问题排查
+
+## 9. 后续任务（2026-09-10 米罗定，核心项目已收官）
+
+> **核心项目到此结束**：bsk CLI + Chrome 扩展已可用（Linux 运行能力确认，当前部署在
+> 192.168.10.99 网关主机；米罗后续可能单独安排一台主机跑 bsk）。us01 / Windows 真机
+> 非必需，降级为可选补测。
+
+- [ ] **N1 — 独立主机连通性验证**：bsk CLI 部署在另一台**非 agent 存在**的主机上时，验证
+      `agent <-> bsk cli (gateway mode) <-> browser extension` 三段连通性（网关与 agent 分离的
+      真实拓扑；与 M5 的 Mac 浏览器主机验证互补——这次是 CLI/网关独立主机）
+- [ ] **N2 — skill 实测可用性**：让 agent 通过 `browser-login` skill 真实调用一次浏览器操作，
+      判断端到端可用性（当前 skill 网关形态已就绪，未做真机调用）
+- [ ] **N3 — Chrome Web Store 发行**：N2 确认可用后，协助米罗将插件发行至 Chrome Web Store
+      （当前只 load unpacked；需准备商店素材/隐私政策，PRIVACY.md 在 apps/extension/）
+- [ ] **N4 — Firefox 插件**：开发 Firefox 版扩展（上游 roadmap 里有；MV3 迁移 +
+      browser.* API 适配）
 
 ## 9. 相关文件索引
 
