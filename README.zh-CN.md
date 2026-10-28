@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mirr0ch1/MultiAgent-BrowserSkill/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Mirr0ch1/MultiAgent-BrowserSkill/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"></a>
+  <img src="https://img.shields.io/badge/version-0.2.0-FF8A00?style=for-the-badge" alt="Version 0.2.0">
   <img src="https://img.shields.io/github/last-commit/Mirr0ch1/MultiAgent-BrowserSkill?style=for-the-badge&logo=git&logoColor=white&label=last%20commit" alt="Last commit">
   <img src="https://img.shields.io/badge/license-MIT-2ea44f?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="MIT license">
   <img src="https://img.shields.io/github/stars/Mirr0ch1/MultiAgent-BrowserSkill?style=for-the-badge&logo=github&label=stars" alt="Stars">
@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.2.0-6e7781?style=flat-square" alt="Version 0.2.0">
+  <img src="https://img.shields.io/badge/SSH-not%20required-2ea44f?style=flat-square" alt="No SSH required">
   <img src="https://img.shields.io/badge/browser-extension-FF8A00?style=flat-square" alt="Browser extension">
   <img src="https://img.shields.io/badge/auth-token-2ea44f?style=flat-square" alt="Token auth">
 </p>
