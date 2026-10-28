@@ -1,26 +1,39 @@
-# MultiAgent-BrowserSkill
-
 <p align="center">
-  <img src="docs/assets/browserskill-readme-banner.png" alt="MultiAgent-BrowserSkill banner" />
+  <img src="assets/readme/banner-zh-Hans.png" alt="MultiAgent-BrowserSkill — 多 Agent、多浏览器、一个局域网网关" width="100%">
 </p>
 
 <p align="center">
-  <strong>让多个 AI Agent 通过局域网驱动多台浏览器的网关 —— 不打断你的工作。</strong>
+  <a href="https://github.com/Mirr0ch1/MultiAgent-BrowserSkill/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Mirr0ch1/MultiAgent-BrowserSkill/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"></a>
+  <img src="https://img.shields.io/github/last-commit/Mirr0ch1/MultiAgent-BrowserSkill?style=for-the-badge&logo=git&logoColor=white&label=last%20commit" alt="Last commit">
+  <img src="https://img.shields.io/badge/license-MIT-2ea44f?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="MIT license">
+  <img src="https://img.shields.io/github/stars/Mirr0ch1/MultiAgent-BrowserSkill?style=for-the-badge&logo=github&label=stars" alt="Stars">
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · 中文
+  <img src="https://img.shields.io/badge/Rust-1.85%2B-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust 1.85+">
+  <img src="https://img.shields.io/badge/LAN-gateway-FF8A00?style=for-the-badge" alt="LAN gateway">
+  <img src="https://img.shields.io/badge/multi--agent%20%C3%97%20multi--browser-yes-8A2BE2?style=for-the-badge" alt="Multi-agent x multi-browser">
+  <img src="https://img.shields.io/badge/protocol-1.2-0A84FF?style=for-the-badge" alt="Protocol 1.2">
 </p>
 
-**MultiAgent-BrowserSkill** 是 [Tencent/BrowserSkill](https://github.com/Tencent/BrowserSkill)
-（MIT）的网关化 fork。它把「AI Agent 与浏览器之间的本地桥」升级为**局域网网关 / broker**：
-多台机器上的多个 Agent 可以共享多台主机上的多个浏览器 —— 同时完整保留原版单机模式。
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.2.0-6e7781?style=flat-square" alt="Version 0.2.0">
+  <img src="https://img.shields.io/badge/browser-extension-FF8A00?style=flat-square" alt="Browser extension">
+  <img src="https://img.shields.io/badge/auth-token-2ea44f?style=flat-square" alt="Token auth">
+</p>
 
-Agent 通过带认证的 TCP IPC 连接网关 daemon；任意主机上的浏览器扩展通过带认证的
-WebSocket 主动回连同一 daemon。不需要 SSH、网关主机不保存任何浏览器主机凭据、不锁定
-任何特定 Agent 框架。
+<p align="center">
+  <a href="README.md">English</a> · <b>中文</b>
+</p>
 
-Agent 想碰你已打开的标签页？它必须显式借用、用完归还，其余浏览器内容一概不碰。
+<h1 align="center">MultiAgent-BrowserSkill</h1>
+
+<p align="center">
+  <b>多 Agent、多浏览器、一个局域网网关。</b><br>
+  <sub>Tencent/BrowserSkill 的网关化 fork，让多台机器上的多个 Agent 共享浏览器。</sub>
+</p>
+
+---
 
 ## 本 fork 新增能力
 

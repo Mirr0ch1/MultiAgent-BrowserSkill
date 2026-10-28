@@ -1,31 +1,39 @@
-# MultiAgent-BrowserSkill
-
 <p align="center">
-  <img src="docs/assets/browserskill-readme-banner.png" alt="MultiAgent-BrowserSkill banner" />
+  <img src="assets/readme/banner-en.png" alt="MultiAgent-BrowserSkill — many agents, many browsers, one LAN gateway" width="100%">
 </p>
 
 <p align="center">
-  <strong>Let many AI agents drive your browsers over the LAN — without interrupting your work.</strong>
+  <a href="https://github.com/Mirr0ch1/MultiAgent-BrowserSkill/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Mirr0ch1/MultiAgent-BrowserSkill/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"></a>
+  <img src="https://img.shields.io/github/last-commit/Mirr0ch1/MultiAgent-BrowserSkill?style=for-the-badge&logo=git&logoColor=white&label=last%20commit" alt="Last commit">
+  <img src="https://img.shields.io/badge/license-MIT-2ea44f?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="MIT license">
+  <img src="https://img.shields.io/github/stars/Mirr0ch1/MultiAgent-BrowserSkill?style=for-the-badge&logo=github&label=stars" alt="Stars">
 </p>
 
 <p align="center">
-  English · <a href="README.zh-CN.md">中文</a>
+  <img src="https://img.shields.io/badge/Rust-1.85%2B-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust 1.85+">
+  <img src="https://img.shields.io/badge/LAN-gateway-FF8A00?style=for-the-badge" alt="LAN gateway">
+  <img src="https://img.shields.io/badge/multi--agent%20%C3%97%20multi--browser-yes-8A2BE2?style=for-the-badge" alt="Multi-agent x multi-browser">
+  <img src="https://img.shields.io/badge/protocol-1.2-0A84FF?style=for-the-badge" alt="Protocol 1.2">
 </p>
 
-**MultiAgent-BrowserSkill** is a gateway-shaped fork of
-[Tencent/BrowserSkill](https://github.com/Tencent/BrowserSkill) (MIT). It turns
-the local bridge between AI agents and your browser into a **LAN gateway /
-broker**: multiple agents on multiple machines can share multiple browsers
-across hosts — while still fully supporting the original single-machine mode.
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.2.0-6e7781?style=flat-square" alt="Version 0.2.0">
+  <img src="https://img.shields.io/badge/browser-extension-FF8A00?style=flat-square" alt="Browser extension">
+  <img src="https://img.shields.io/badge/auth-token-2ea44f?style=flat-square" alt="Token auth">
+</p>
 
-Agents connect to a gateway daemon over authenticated TCP IPC; browser
-extensions on any host dial back to the same daemon over authenticated
-WebSocket. No SSH, no credentials stored on the gateway host, no lock-in to a
-specific agent framework.
+<p align="center">
+  <b>English</b> · <a href="README.zh-CN.md">中文</a>
+</p>
 
-Need the agent to touch a tab you already have open? It must borrow that tab
-explicitly, return it when the task is done, and leave the rest of your browser
-alone.
+<h1 align="center">MultiAgent-BrowserSkill</h1>
+
+<p align="center">
+  <b>Many agents. Many browsers. One LAN gateway.</b><br>
+  <sub>A gateway-shaped fork of Tencent/BrowserSkill that lets multiple agents share browsers across hosts.</sub>
+</p>
+
+---
 
 ## What's new in this fork
 
